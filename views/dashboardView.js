@@ -74,6 +74,16 @@ function iconArrow() {
   `;
 }
 
+function iconStorage() {
+  return `
+    <svg viewBox="0 0 24 24" class="icon" fill="none" aria-hidden="true">
+      <path d="M5 7c0-1.66 3.13-3 7-3s7 1.34 7 3-3.13 3-7 3-7-1.34-7-3Z" stroke="currentColor" stroke-width="1.8"/>
+      <path d="M5 7v5c0 1.66 3.13 3 7 3s7-1.34 7-3V7" stroke="currentColor" stroke-width="1.8"/>
+      <path d="M5 12v5c0 1.66 3.13 3 7 3s7-1.34 7-3v-5" stroke="currentColor" stroke-width="1.8"/>
+    </svg>
+  `;
+}
+
 function iconMoon() {
   return `
     <svg class="theme-icon theme-icon-dark" viewBox="0 0 24 24" fill="none" aria-hidden="true">
@@ -91,22 +101,34 @@ function iconSun() {
   `;
 }
 
+function formatLabel(label = "") {
+  const labels = {
+    medis: "Medical",
+    non_medis: "Non-medical",
+    unknown: "Unknown",
+  };
+
+  return labels[label] || label || "Unknown";
+}
+
 function dashboardView({ uploads = [], summary = {}, config = {} }) {
   const total = summary.total || 0;
   const medis = summary.medis || 0;
   const nonMedis = summary.non_medis || 0;
   const unknown = summary.unknown || 0;
+  const totalBytes = summary.total_bytes || 0;
 
   const medisPercent = total > 0 ? Math.round((medis / total) * 100) : 0;
   const nonMedisPercent = total > 0 ? Math.round((nonMedis / total) * 100) : 0;
   const unknownPercent = total > 0 ? Math.round((unknown / total) * 100) : 0;
 
   const latestUpload = uploads[0];
+  const averageFileSize = total > 0 ? totalBytes / total : 0;
 
   const recentRows =
     uploads.length > 0
       ? uploads
-          .slice(0, 5)
+          .slice(0, 10)
           .map(
             (item) => `
               <tr>
@@ -131,7 +153,7 @@ function dashboardView({ uploads = [], summary = {}, config = {} }) {
                       ? "label-gray"
                       : ""
                   }">
-                    ${item.label}
+                    ${formatLabel(item.label)}
                   </span>
                 </td>
 
@@ -501,12 +523,44 @@ function dashboardView({ uploads = [], summary = {}, config = {} }) {
       line-height: 1;
       letter-spacing: -0.05em;
       color: var(--text-strong);
+      word-break: break-word;
+    }
+
+    .metric-storage {
+      font-size: 24px;
+      letter-spacing: -0.04em;
     }
 
     .metric-note {
       margin-top: 8px;
       color: var(--muted-2);
       font-size: 12px;
+    }
+
+    .storage-mini {
+      margin-top: 10px;
+      display: grid;
+      gap: 7px;
+    }
+
+    .storage-track {
+      height: 8px;
+      border-radius: 999px;
+      overflow: hidden;
+      background: var(--gray-soft);
+    }
+
+    .storage-fill {
+      height: 100%;
+      width: 100%;
+      border-radius: 999px;
+      background: var(--accent);
+    }
+
+    .storage-caption {
+      color: var(--muted-2);
+      font-size: 12px;
+      line-height: 1.45;
     }
 
     .content-grid {
@@ -930,7 +984,7 @@ function dashboardView({ uploads = [], summary = {}, config = {} }) {
           </div>
 
           <h2 class="metric-value">${total}</h2>
-          <div class="metric-note">Sesi server aktif</div>
+          <div class="metric-note">Total gambar tercatat</div>
         </article>
 
         <article class="metric-card">
@@ -955,15 +1009,24 @@ function dashboardView({ uploads = [], summary = {}, config = {} }) {
 
         <article class="metric-card">
           <div class="metric-top">
-            <div class="metric-label">Latest file</div>
-            <div class="metric-icon">${iconUpload()}</div>
+            <div class="metric-label">Total storage</div>
+            <div class="metric-icon">${iconStorage()}</div>
           </div>
 
-          <h2 class="metric-value" style="font-size: 22px;">
-            ${latestUpload ? formatBytes(latestUpload.bytes || 0) : "0 B"}
+          <h2 class="metric-value metric-storage">
+            ${formatBytes(totalBytes)}
           </h2>
 
-          <div class="metric-note">${latestUpload ? latestUpload.label : "Belum ada upload"}</div>
+          <div class="metric-note">Akumulasi semua gambar tercatat</div>
+
+          <div class="storage-mini">
+            <div class="storage-track">
+              <div class="storage-fill"></div>
+            </div>
+            <div class="storage-caption">
+              Rata-rata ${formatBytes(averageFileSize)} per gambar
+            </div>
+          </div>
         </article>
       </section>
 
@@ -972,7 +1035,7 @@ function dashboardView({ uploads = [], summary = {}, config = {} }) {
           <div class="panel-head">
             <div>
               <h2>Recent captures</h2>
-              <p>5 upload terakhir yang diterima backend.</p>
+              <p>10 upload terakhir yang diterima backend.</p>
             </div>
 
             <a class="panel-link" href="/gallery">See all</a>
@@ -984,8 +1047,8 @@ function dashboardView({ uploads = [], summary = {}, config = {} }) {
                 <tr>
                   <th>File</th>
                   <th>Label</th>
+                  <th>Resolution</th>
                   <th>Size</th>
-                  <th>Weight</th>
                   <th>Action</th>
                 </tr>
               </thead>
