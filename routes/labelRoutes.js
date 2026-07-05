@@ -1,11 +1,11 @@
-
 const express = require("express");
 const cloudinary = require("cloudinary").v2;
 
 const {
-  updateUploadLabel,
-  updateMultipleUploadLabels,
-} = require("../data/recentUploads");
+  invalidateCloudinaryCache,
+} = require(
+  "../services/cloudinaryRepository"
+);
 
 const router = express.Router();
 
@@ -15,14 +15,12 @@ const router = express.Router();
 |--------------------------------------------------------------------------
 */
 
-const MAX_BULK_ITEMS = 3000;
-const CLOUDINARY_BATCH_SIZE = 100;
+const MAX_BULK_ITEMS = 100;
 
-/*
-|--------------------------------------------------------------------------
-| Cloudinary
-|--------------------------------------------------------------------------
-*/
+const CLOUDINARY_OPTIONS = {
+  resource_type: "image",
+  type: "upload",
+};
 
 cloudinary.config({
   cloud_name:
@@ -33,29 +31,80 @@ cloudinary.config({
 
   api_secret:
     process.env.CLOUDINARY_API_SECRET,
+
+  secure: true,
 });
 
 /*
 |--------------------------------------------------------------------------
-| Helper label
+| Helper Error
 |--------------------------------------------------------------------------
 */
 
-function normalizeLabel(label = "") {
-  const value = String(label)
-    .trim()
-    .toLowerCase();
+function createHttpError(
+  message,
+  status = 400
+) {
+  const error =
+    new Error(message);
 
-  if (value === "medis") {
-    return "medis";
+  error.status =
+    status;
+
+  return error;
+}
+
+/*
+|--------------------------------------------------------------------------
+| Status Konfigurasi Cloudinary
+|--------------------------------------------------------------------------
+*/
+
+function isCloudinaryReady() {
+  return Boolean(
+    process.env
+      .CLOUDINARY_CLOUD_NAME &&
+      process.env
+        .CLOUDINARY_API_KEY &&
+      process.env
+        .CLOUDINARY_API_SECRET
+  );
+}
+
+function validateCloudinaryConfiguration() {
+  if (!isCloudinaryReady()) {
+    throw createHttpError(
+      "Konfigurasi Cloudinary belum lengkap.",
+      503
+    );
   }
+}
+
+/*
+|--------------------------------------------------------------------------
+| Normalisasi Label
+|--------------------------------------------------------------------------
+*/
+
+function normalizeLabel(
+  label = ""
+) {
+  const value =
+    String(label)
+      .trim()
+      .toLowerCase()
+      .replace(
+        /[\s-]+/g,
+        "_"
+      );
 
   if (
-    value === "non_medis" ||
-    value === "non-medis" ||
-    value === "non medis"
+    [
+      "medis",
+      "non_medis",
+    ].includes(value)
   ) {
-    return "non_medis";
+    return value;
   }
 
   return null;
@@ -63,39 +112,36 @@ function normalizeLabel(label = "") {
 
 /*
 |--------------------------------------------------------------------------
-| Helper public_id
+| Normalisasi Public ID
 |--------------------------------------------------------------------------
 */
 
-function normalizePublicId(publicId = "") {
-  return String(publicId)
-    .trim();
+function normalizePublicId(
+  publicId = ""
+) {
+  return String(
+    publicId
+  ).trim();
 }
 
 function normalizePublicIds(
   publicIds = []
 ) {
-  /*
-   * Mendukung:
-   *
-   * public_ids: ["id-1", "id-2"]
-   *
-   * maupun:
-   *
-   * public_ids: "id-1"
-   */
   const values =
-    Array.isArray(publicIds)
+    Array.isArray(
+      publicIds
+    )
       ? publicIds
       : [publicIds];
 
   return Array.from(
     new Set(
       values
-        .map((publicId) =>
-          normalizePublicId(
-            publicId
-          )
+        .map(
+          (publicId) =>
+            normalizePublicId(
+              publicId
+            )
         )
         .filter(Boolean)
     )
@@ -104,257 +150,11 @@ function normalizePublicIds(
 
 /*
 |--------------------------------------------------------------------------
-| Status Cloudinary
+| Validasi Satu Label
 |--------------------------------------------------------------------------
 */
 
-function isCloudinaryReady() {
-  return Boolean(
-    process.env.CLOUDINARY_CLOUD_NAME &&
-      process.env.CLOUDINARY_API_KEY &&
-      process.env.CLOUDINARY_API_SECRET
-  );
-}
-
-/*
-|--------------------------------------------------------------------------
-| Membagi array menjadi beberapa batch
-|--------------------------------------------------------------------------
-*/
-
-function splitIntoBatches(
-  items = [],
-  batchSize = 100
-) {
-  const batches = [];
-
-  for (
-    let index = 0;
-    index < items.length;
-    index += batchSize
-  ) {
-    batches.push(
-      items.slice(
-        index,
-        index + batchSize
-      )
-    );
-  }
-
-  return batches;
-}
-
-/*
-|--------------------------------------------------------------------------
-| Menyimpan context Cloudinary
-|--------------------------------------------------------------------------
-*/
-
-function saveContextToCloudinary(
-  publicIds,
-  label
-) {
-  return new Promise(
-    (resolve, reject) => {
-      cloudinary.uploader.add_context(
-        `actual_label=${label}`,
-        publicIds,
-        {
-          resource_type: "image",
-          type: "upload",
-        },
-        (error, result) => {
-          if (error) {
-            reject(error);
-            return;
-          }
-
-          resolve(result);
-        }
-      );
-    }
-  );
-}
-
-/*
-|--------------------------------------------------------------------------
-| Sinkronisasi banyak label ke Cloudinary
-|--------------------------------------------------------------------------
-|
-| Public ID dibagi per 100 data agar request tidak terlalu besar.
-|
-| Jika salah satu batch gagal, batch lainnya tetap dilanjutkan.
-|
-*/
-
-async function synchronizeLabelsToCloudinary(
-  publicIds,
-  label
-) {
-  const normalizedPublicIds =
-    normalizePublicIds(
-      publicIds
-    );
-
-  if (!isCloudinaryReady()) {
-    return {
-      success: false,
-
-      total_requested:
-        normalizedPublicIds.length,
-
-      synced_count: 0,
-
-      failed_count:
-        normalizedPublicIds.length,
-
-      successful_batches: 0,
-
-      failed_batches: 0,
-
-      errors: [
-        "Konfigurasi Cloudinary belum lengkap.",
-      ],
-    };
-  }
-
-  if (
-    normalizedPublicIds.length === 0
-  ) {
-    return {
-      success: true,
-
-      total_requested: 0,
-
-      synced_count: 0,
-
-      failed_count: 0,
-
-      successful_batches: 0,
-
-      failed_batches: 0,
-
-      errors: [],
-    };
-  }
-
-  const batches =
-    splitIntoBatches(
-      normalizedPublicIds,
-
-      CLOUDINARY_BATCH_SIZE
-    );
-
-  let syncedCount = 0;
-  let failedCount = 0;
-
-  let successfulBatches = 0;
-  let failedBatches = 0;
-
-  const errors = [];
-
-  for (
-    let index = 0;
-    index < batches.length;
-    index += 1
-  ) {
-    const batch =
-      batches[index];
-
-    try {
-      console.log(
-        `Memproses Cloudinary batch ${
-          index + 1
-        }/${batches.length}:`,
-        `${batch.length} gambar`
-      );
-
-      await saveContextToCloudinary(
-        batch,
-        label
-      );
-
-      syncedCount +=
-        batch.length;
-
-      successfulBatches += 1;
-    } catch (error) {
-      failedCount +=
-        batch.length;
-
-      failedBatches += 1;
-
-      const message =
-        error.message ||
-        "Kesalahan Cloudinary tidak diketahui.";
-
-      errors.push({
-        batch:
-          index + 1,
-
-        public_ids:
-          batch,
-
-        message,
-      });
-
-      console.error(
-        `Cloudinary batch ${
-          index + 1
-        }/${batches.length} gagal:`,
-        message
-      );
-    }
-
-    /*
-     * Jeda kecil antarbatches agar koneksi
-     * tidak dihantam terus-menerus.
-     */
-    if (
-      index <
-      batches.length - 1
-    ) {
-      await new Promise(
-        (resolve) => {
-          setTimeout(
-            resolve,
-            250
-          );
-        }
-      );
-    }
-  }
-
-  return {
-    success:
-      failedCount === 0,
-
-    total_requested:
-      normalizedPublicIds.length,
-
-    synced_count:
-      syncedCount,
-
-    failed_count:
-      failedCount,
-
-    successful_batches:
-      successfulBatches,
-
-    failed_batches:
-      failedBatches,
-
-    errors,
-  };
-}
-
-/*
-|--------------------------------------------------------------------------
-| Proses koreksi satu label
-|--------------------------------------------------------------------------
-*/
-
-async function processLabelUpdate(
+function validateSingleInput(
   publicIdValue,
   labelValue
 ) {
@@ -369,83 +169,30 @@ async function processLabelUpdate(
     );
 
   if (!publicId) {
-    const error = new Error(
+    throw createHttpError(
       "public_id gambar wajib diisi."
     );
-
-    error.status = 400;
-    throw error;
   }
 
   if (!label) {
-    const error = new Error(
+    throw createHttpError(
       "Label hanya boleh medis atau non_medis."
     );
-
-    error.status = 400;
-    throw error;
   }
-
-  /*
-   * Simpan lokal lebih dahulu.
-   *
-   * uploads.json menjadi sumber utama
-   * untuk tampilan dashboard dan galeri.
-   */
-  const updatedUpload =
-    updateUploadLabel(
-      publicId,
-      label
-    );
-
-  if (!updatedUpload) {
-    const error = new Error(
-      "Data gambar tidak ditemukan di uploads.json."
-    );
-
-    error.status = 404;
-    throw error;
-  }
-
-  /*
-   * Sinkronisasi Cloudinary dilakukan setelah
-   * penyimpanan lokal berhasil.
-   */
-  const cloudinaryResult =
-    await synchronizeLabelsToCloudinary(
-      [publicId],
-      label
-    );
-
-  console.log(
-    "Label berhasil diperbarui:",
-    {
-      public_id:
-        publicId,
-
-      label,
-
-      label_updated_at:
-        updatedUpload.label_updated_at,
-
-      cloudinary_synced:
-        cloudinaryResult.success,
-    }
-  );
 
   return {
-    updatedUpload,
-    cloudinaryResult,
+    publicId,
+    label,
   };
 }
 
 /*
 |--------------------------------------------------------------------------
-| Proses koreksi label bulk
+| Validasi Bulk Label
 |--------------------------------------------------------------------------
 */
 
-async function processBulkLabelUpdate(
+function validateBulkInput(
   publicIdsValue,
   labelValue
 ) {
@@ -462,112 +209,292 @@ async function processBulkLabelUpdate(
   if (
     publicIds.length === 0
   ) {
-    const error = new Error(
+    throw createHttpError(
       "Tidak ada gambar yang dipilih."
     );
-
-    error.status = 400;
-    throw error;
   }
 
   if (
     publicIds.length >
     MAX_BULK_ITEMS
   ) {
-    const error = new Error(
-      `Maksimal ${MAX_BULK_ITEMS} gambar dalam satu proses bulk.`
+    throw createHttpError(
+      `Maksimal ${MAX_BULK_ITEMS} gambar dalam satu bulk update.`
     );
-
-    error.status = 400;
-    throw error;
   }
 
   if (!label) {
-    const error = new Error(
+    throw createHttpError(
       "Label hanya boleh medis atau non_medis."
     );
-
-    error.status = 400;
-    throw error;
   }
-
-  /*
-   * Simpan seluruh perubahan lokal
-   * hanya dengan satu kali penulisan file.
-   */
-  const localResult =
-    updateMultipleUploadLabels(
-      publicIds,
-      label
-    );
-
-  if (
-    localResult.updatedCount === 0 &&
-    localResult.updatedUploads.length === 0
-  ) {
-    const error = new Error(
-      "Tidak ada data gambar yang ditemukan untuk diperbarui."
-    );
-
-    error.status = 404;
-    throw error;
-  }
-
-  /*
-   * Gunakan public_id yang benar-benar ditemukan
-   * di uploads.json.
-   */
-  const matchedPublicIds =
-    localResult.updatedUploads.map(
-      (item) => item.public_id
-    );
-
-  /*
-   * Sinkronisasi metadata Cloudinary
-   * dilakukan per batch.
-   */
-  const cloudinaryResult =
-    await synchronizeLabelsToCloudinary(
-      matchedPublicIds,
-      label
-    );
-
-  console.log(
-    "Bulk update label selesai:",
-    {
-      requested:
-        publicIds.length,
-
-      updated:
-        localResult.updatedCount,
-
-      missing:
-        localResult
-          .missingPublicIds
-          ?.length || 0,
-
-      label,
-
-      cloudinary_synced:
-        cloudinaryResult
-          .synced_count,
-
-      cloudinary_failed:
-        cloudinaryResult
-          .failed_count,
-    }
-  );
 
   return {
-    localResult,
-    cloudinaryResult,
+    publicIds,
     label,
   };
 }
 
 /*
 |--------------------------------------------------------------------------
-| JSON API satu label
+| Wrapper Context Cloudinary
+|--------------------------------------------------------------------------
+*/
+
+function addContext(
+  publicIds,
+  contextValue
+) {
+  return new Promise(
+    (
+      resolve,
+      reject
+    ) => {
+      cloudinary.uploader
+        .add_context(
+          contextValue,
+
+          publicIds,
+
+          CLOUDINARY_OPTIONS,
+
+          (
+            error,
+            result
+          ) => {
+            if (error) {
+              reject(error);
+              return;
+            }
+
+            resolve(result);
+          }
+        );
+    }
+  );
+}
+
+/*
+|--------------------------------------------------------------------------
+| Wrapper Tambah Tag
+|--------------------------------------------------------------------------
+*/
+
+function addTag(
+  tag,
+  publicIds
+) {
+  return new Promise(
+    (
+      resolve,
+      reject
+    ) => {
+      cloudinary.uploader
+        .add_tag(
+          tag,
+
+          publicIds,
+
+          CLOUDINARY_OPTIONS,
+
+          (
+            error,
+            result
+          ) => {
+            if (error) {
+              reject(error);
+              return;
+            }
+
+            resolve(result);
+          }
+        );
+    }
+  );
+}
+
+/*
+|--------------------------------------------------------------------------
+| Wrapper Hapus Tag
+|--------------------------------------------------------------------------
+*/
+
+function removeTag(
+  tag,
+  publicIds
+) {
+  return new Promise(
+    (
+      resolve,
+      reject
+    ) => {
+      cloudinary.uploader
+        .remove_tag(
+          tag,
+
+          publicIds,
+
+          CLOUDINARY_OPTIONS,
+
+          (
+            error,
+            result
+          ) => {
+            if (error) {
+              reject(error);
+              return;
+            }
+
+            resolve(result);
+          }
+        );
+    }
+  );
+}
+
+/*
+|--------------------------------------------------------------------------
+| Memperbarui Label Cloudinary
+|--------------------------------------------------------------------------
+|
+| Proses:
+|
+| 1. Context actual_label diperbarui.
+| 2. Context label diperbarui.
+| 3. Waktu koreksi disimpan.
+| 4. Tag label lama dihapus.
+| 5. Tag label baru ditambahkan.
+| 6. Cache Dashboard dan Gallery dihapus.
+|
+*/
+
+async function updateCloudinaryLabels(
+  publicIds,
+  label
+) {
+  validateCloudinaryConfiguration();
+
+  const labelUpdatedAt =
+    new Date()
+      .toISOString();
+
+  const contextValue = [
+    `actual_label=${label}`,
+    `label=${label}`,
+    `label_updated_at=${labelUpdatedAt}`,
+  ].join("|");
+
+  /*
+   * Mendukung tag lama dan tag baru.
+   */
+
+  const oldLabelTags = [
+    "medis",
+    "non_medis",
+    "unknown",
+    "label_medis",
+    "label_non_medis",
+    "label_unknown",
+  ];
+
+  const newLabelTags = [
+    "dataset",
+    "dataset_limbah",
+    label,
+    `label_${label}`,
+  ];
+
+  try {
+    /*
+     * Perbarui contextual metadata.
+     */
+
+    await addContext(
+      publicIds,
+      contextValue
+    );
+
+    /*
+     * Hapus seluruh kemungkinan
+     * tag label sebelumnya.
+     */
+
+    await Promise.all(
+      oldLabelTags.map(
+        (tag) =>
+          removeTag(
+            tag,
+            publicIds
+          )
+      )
+    );
+
+    /*
+     * Tambahkan tag label baru.
+     */
+
+    await Promise.all(
+      newLabelTags.map(
+        (tag) =>
+          addTag(
+            tag,
+            publicIds
+          )
+      )
+    );
+
+    /*
+     * Data cache lama tidak boleh
+     * ditampilkan setelah koreksi.
+     */
+
+    invalidateCloudinaryCache();
+
+    return {
+      success: true,
+
+      requested_count:
+        publicIds.length,
+
+      updated_count:
+        publicIds.length,
+
+      label,
+
+      label_updated_at:
+        labelUpdatedAt,
+
+      public_ids:
+        publicIds,
+    };
+  } catch (error) {
+    /*
+     * Context mungkin sudah berubah sebelum
+     * salah satu proses tag gagal. Cache tetap
+     * dibuang agar pembacaan berikutnya mengambil
+     * kondisi terbaru dari Cloudinary.
+     */
+
+    invalidateCloudinaryCache();
+
+    const cloudinaryError =
+      createHttpError(
+        error.message ||
+          "Label gagal diperbarui di Cloudinary.",
+
+        502
+      );
+
+    cloudinaryError.cause =
+      error;
+
+    throw cloudinaryError;
+  }
+}
+
+/*
+|--------------------------------------------------------------------------
+| JSON API Satu Label
 |--------------------------------------------------------------------------
 |
 | POST /api/update-label
@@ -583,23 +510,34 @@ async function processBulkLabelUpdate(
 
 router.post(
   "/update-label",
-  async (req, res) => {
-    try {
-      console.log(
-        "POST /api/update-label",
-        req.body
-      );
 
-      const result =
-        await processLabelUpdate(
-          req.body?.public_id,
-          req.body?.label
+  async (
+    req,
+    res
+  ) => {
+    res.setHeader(
+      "Cache-Control",
+      "no-store"
+    );
+
+    try {
+      const {
+        publicId,
+        label,
+      } =
+        validateSingleInput(
+          req.body
+            ?.public_id,
+
+          req.body
+            ?.label
         );
 
-      const cloudinarySynced =
-        result
-          .cloudinaryResult
-          .success;
+      const result =
+        await updateCloudinaryLabels(
+          [publicId],
+          label
+        );
 
       return res
         .status(200)
@@ -607,31 +545,17 @@ router.post(
           success: true,
 
           message:
-            cloudinarySynced
-              ? "Label berhasil disimpan ke data lokal dan Cloudinary."
-              : "Label berhasil disimpan ke data lokal, tetapi sinkronisasi Cloudinary belum berhasil.",
-
-          cloudinary_synced:
-            cloudinarySynced,
-
-          cloudinary:
-            result
-              .cloudinaryResult,
+            "Label berhasil diperbarui di Cloudinary.",
 
           data: {
             public_id:
-              result
-                .updatedUpload
-                .public_id,
+              publicId,
 
             label:
-              result
-                .updatedUpload
-                .label,
+              result.label,
 
             label_updated_at:
               result
-                .updatedUpload
                 .label_updated_at,
           },
         });
@@ -643,7 +567,8 @@ router.post(
 
       return res
         .status(
-          error.status || 500
+          error.status ||
+          500
         )
         .json({
           success: false,
@@ -658,7 +583,7 @@ router.post(
 
 /*
 |--------------------------------------------------------------------------
-| Form HTML satu label
+| Form HTML Satu Label
 |--------------------------------------------------------------------------
 |
 | POST /api/update-label-form
@@ -667,30 +592,34 @@ router.post(
 
 router.post(
   "/update-label-form",
-  async (req, res) => {
-    try {
-      console.log(
-        "POST /api/update-label-form",
-        req.body
-      );
 
-      const result =
-        await processLabelUpdate(
-          req.body?.public_id,
-          req.body?.label
+  async (
+    req,
+    res
+  ) => {
+    try {
+      const {
+        publicId,
+        label,
+      } =
+        validateSingleInput(
+          req.body
+            ?.public_id,
+
+          req.body
+            ?.label
         );
 
-      const message =
-        result
-          .cloudinaryResult
-          .success
-          ? "Label berhasil disimpan."
-          : "Label berhasil disimpan secara lokal, tetapi Cloudinary belum tersinkronisasi.";
+      await updateCloudinaryLabels(
+        [publicId],
+        label
+      );
 
       return res.redirect(
         303,
+
         `/gallery?label_updated=${encodeURIComponent(
-          message
+          "Label berhasil diperbarui di Cloudinary."
         )}`
       );
     } catch (error) {
@@ -701,6 +630,7 @@ router.post(
 
       return res.redirect(
         303,
+
         `/gallery?label_error=${encodeURIComponent(
           error.message ||
             "Label gagal diperbarui."
@@ -712,7 +642,7 @@ router.post(
 
 /*
 |--------------------------------------------------------------------------
-| JSON API bulk label
+| JSON API Bulk Label
 |--------------------------------------------------------------------------
 |
 | POST /api/update-labels-bulk
@@ -731,93 +661,60 @@ router.post(
 
 router.post(
   "/update-labels-bulk",
-  async (req, res) => {
+
+  async (
+    req,
+    res
+  ) => {
+    res.setHeader(
+      "Cache-Control",
+      "no-store"
+    );
+
     try {
-      console.log(
-        "POST /api/update-labels-bulk",
-        {
-          total_public_ids:
-            Array.isArray(
-              req.body?.public_ids
-            )
-              ? req.body
-                  .public_ids
-                  .length
-              : 0,
+      const {
+        publicIds,
+        label,
+      } =
+        validateBulkInput(
+          req.body
+            ?.public_ids,
 
-          label:
-            req.body?.label,
-        }
-      );
-
-      const result =
-        await processBulkLabelUpdate(
-          req.body?.public_ids,
-          req.body?.label
+          req.body
+            ?.label
         );
 
-      const {
-        localResult,
-        cloudinaryResult,
-        label,
-      } = result;
-
-      let message =
-        `${localResult.updatedCount} label berhasil diperbarui secara lokal.`;
-
-      if (
-        cloudinaryResult.success
-      ) {
-        message =
-          `${localResult.updatedCount} label berhasil diperbarui dan disinkronkan ke Cloudinary.`;
-      } else if (
-        cloudinaryResult
-          .synced_count > 0
-      ) {
-        message =
-          `${localResult.updatedCount} label berhasil diperbarui secara lokal. ` +
-          `${cloudinaryResult.synced_count} berhasil disinkronkan ke Cloudinary dan ` +
-          `${cloudinaryResult.failed_count} gagal disinkronkan.`;
-      }
+      const result =
+        await updateCloudinaryLabels(
+          publicIds,
+          label
+        );
 
       return res
         .status(200)
         .json({
           success: true,
 
-          message,
+          message:
+            `${result.updated_count} label berhasil diperbarui di Cloudinary.`,
 
-          label,
+          label:
+            result.label,
 
           requested_count:
-            localResult
-              .requestedCount,
+            result
+              .requested_count,
 
           updated_count:
-            localResult
-              .updatedCount,
+            result
+              .updated_count,
 
-          missing_count:
-            localResult
-              .missingPublicIds
-              ?.length || 0,
-
-          missing_public_ids:
-            localResult
-              .missingPublicIds ||
-            [],
-
-          cloudinary_synced:
-            cloudinaryResult
-              .success,
-
-          cloudinary:
-            cloudinaryResult,
+          failed_count:
+            0,
 
           label_updated_at:
-            localResult
-              .label_updated_at ||
-            null,
+            result
+              .label_updated_at,
         });
     } catch (error) {
       console.error(
@@ -827,7 +724,8 @@ router.post(
 
       return res
         .status(
-          error.status || 500
+          error.status ||
+          500
         )
         .json({
           success: false,
@@ -837,51 +735,6 @@ router.post(
             "Bulk update label gagal.",
         });
     }
-  }
-);
-
-/*
-|--------------------------------------------------------------------------
-| Tes route label
-|--------------------------------------------------------------------------
-|
-| GET /api/label-status
-|
-*/
-
-router.get(
-  "/label-status",
-  (req, res) => {
-    return res
-      .status(200)
-      .json({
-        success: true,
-
-        message:
-          "Route koreksi label aktif.",
-
-        cloudinary_ready:
-          isCloudinaryReady(),
-
-        endpoints: {
-          single_json:
-            "POST /api/update-label",
-
-          single_form:
-            "POST /api/update-label-form",
-
-          bulk_json:
-            "POST /api/update-labels-bulk",
-        },
-
-        limits: {
-          max_bulk_items:
-            MAX_BULK_ITEMS,
-
-          cloudinary_batch_size:
-            CLOUDINARY_BATCH_SIZE,
-        },
-      });
   }
 );
 

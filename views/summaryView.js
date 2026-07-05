@@ -94,24 +94,16 @@ function summaryView({ summary = {} }) {
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-
   <title>Summary · Capture Panel</title>
-  <link
-    rel="icon"
-    type="image/svg+xml"
-    href="/favicon.svg"
-  />
-
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
   <script>
     (function () {
       const savedTheme = localStorage.getItem("capture-panel-theme");
       const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
       const theme = savedTheme || (prefersDark ? "dark" : "light");
-
       document.documentElement.setAttribute("data-theme", theme);
     })();
   </script>
-
   <style>
     :root {
       --bg: #f5f7fb;
@@ -141,7 +133,6 @@ function summaryView({ summary = {} }) {
       --sidebar-line: rgba(255, 255, 255, 0.10);
       --thumb-bg: #f3f4f6;
     }
-
     html[data-theme="dark"] {
       --bg: #020617;
       --surface: #0f172a;
@@ -167,55 +158,30 @@ function summaryView({ summary = {} }) {
       --sidebar-line: rgba(255, 255, 255, 0.10);
       --thumb-bg: #111827;
     }
-
-    * {
-      box-sizing: border-box;
-    }
-
+    * { box-sizing: border-box; }
     body {
       margin: 0;
       min-height: 100vh;
       color: var(--text);
       background: var(--bg);
-      font-family:
-        Inter,
-        ui-sans-serif,
-        system-ui,
-        -apple-system,
-        BlinkMacSystemFont,
-        "Segoe UI",
-        sans-serif;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
     }
-
-    a {
-      color: inherit;
-    }
-
+    a { color: inherit; }
     .app {
       min-height: 100vh;
       display: grid;
       grid-template-columns: 270px minmax(0, 1fr);
     }
-
     .sidebar {
       position: sticky;
       top: 0;
       height: 100vh;
       padding: 22px;
-      background:
-        radial-gradient(circle at top left, rgba(20, 184, 166, 0.18), transparent 34%),
-        var(--sidebar);
+      background: radial-gradient(circle at top left, rgba(20, 184, 166, 0.18), transparent 34%), var(--sidebar);
       color: #ffffff;
       border-right: 1px solid var(--sidebar-line);
     }
-
-    .brand {
-      display: flex;
-      align-items: center;
-      gap: 12px;
-      margin-bottom: 28px;
-    }
-
+    .brand { display: flex; align-items: center; gap: 12px; margin-bottom: 28px; }
     .brand-mark {
       width: 42px;
       height: 42px;
@@ -225,30 +191,14 @@ function summaryView({ summary = {} }) {
       background: #ffffff;
       color: #0b1220;
     }
-
     html[data-theme="dark"] .brand-mark {
       background: rgba(45, 212, 191, 0.12);
       color: #5eead4;
       border: 1px solid rgba(45, 212, 191, 0.18);
     }
-
-    .brand-title {
-      font-size: 15px;
-      font-weight: 800;
-      letter-spacing: -0.02em;
-    }
-
-    .brand-subtitle {
-      margin-top: 2px;
-      color: rgba(255, 255, 255, 0.55);
-      font-size: 12px;
-    }
-
-    .nav {
-      display: grid;
-      gap: 6px;
-    }
-
+    .brand-title { font-size: 15px; font-weight: 800; letter-spacing: -0.02em; }
+    .brand-subtitle { margin-top: 2px; color: rgba(255, 255, 255, 0.55); font-size: 12px; }
+    .nav { display: grid; gap: 6px; }
     .nav a {
       display: flex;
       align-items: center;
@@ -262,13 +212,7 @@ function summaryView({ summary = {} }) {
       font-weight: 650;
       transition: 0.18s ease;
     }
-
-    .nav a:hover,
-    .nav a.active {
-      color: #ffffff;
-      background: var(--sidebar-soft);
-    }
-
+    .nav a:hover, .nav a.active { color: #ffffff; background: var(--sidebar-soft); }
     .sidebar-footer {
       position: absolute;
       left: 22px;
@@ -279,25 +223,9 @@ function summaryView({ summary = {} }) {
       background: rgba(255, 255, 255, 0.07);
       border: 1px solid var(--sidebar-line);
     }
-
-    .sidebar-footer span {
-      display: block;
-      color: rgba(255, 255, 255, 0.56);
-      font-size: 12px;
-      margin-bottom: 6px;
-    }
-
-    .sidebar-footer strong {
-      display: block;
-      font-size: 13px;
-      line-height: 1.4;
-    }
-
-    .main {
-      min-width: 0;
-      padding: 26px;
-    }
-
+    .sidebar-footer span { display: block; color: rgba(255, 255, 255, 0.56); font-size: 12px; margin-bottom: 6px; }
+    .sidebar-footer strong { display: block; font-size: 13px; line-height: 1.4; }
+    .main { min-width: 0; padding: 26px; }
     .topbar {
       display: flex;
       align-items: center;
@@ -305,29 +233,10 @@ function summaryView({ summary = {} }) {
       gap: 18px;
       margin-bottom: 22px;
     }
-
-    .page-title h1 {
-      margin: 0;
-      font-size: 28px;
-      letter-spacing: -0.045em;
-      color: var(--text-strong);
-    }
-
-    .page-title p {
-      margin: 6px 0 0;
-      color: var(--muted);
-      font-size: 14px;
-    }
-
-    .top-actions {
-      display: flex;
-      gap: 10px;
-      flex-wrap: wrap;
-      justify-content: flex-end;
-    }
-
-    .btn,
-    .theme-toggle {
+    .page-title h1 { margin: 0; font-size: 28px; letter-spacing: -0.045em; color: var(--text-strong); }
+    .page-title p { margin: 6px 0 0; color: var(--muted); font-size: 14px; }
+    .top-actions { display: flex; gap: 10px; flex-wrap: wrap; justify-content: flex-end; }
+    .btn, .theme-toggle {
       min-height: 42px;
       display: inline-flex;
       align-items: center;
@@ -344,51 +253,19 @@ function summaryView({ summary = {} }) {
       box-shadow: 0 8px 18px rgba(15, 23, 42, 0.04);
       transition: 0.18s ease;
     }
-
-    .btn:hover,
-    .theme-toggle:hover {
-      transform: translateY(-1px);
-    }
-
-    .btn-primary {
-      color: var(--primary-text);
-      background: var(--primary);
-      border-color: var(--primary);
-    }
-
-    .theme-toggle {
-      width: 42px;
-      padding: 0;
-      cursor: pointer;
-    }
-
-    .theme-icon {
-      width: 18px;
-      height: 18px;
-      display: none;
-    }
-
-    html[data-theme="light"] .theme-icon-dark {
-      display: block;
-    }
-
-    html[data-theme="dark"] .theme-icon-light {
-      display: block;
-    }
-
-    .icon {
-      width: 20px;
-      height: 20px;
-      display: block;
-    }
-
+    .btn:hover, .theme-toggle:hover { transform: translateY(-1px); }
+    .btn-primary { color: var(--primary-text); background: var(--primary); border-color: var(--primary); }
+    .theme-toggle { width: 42px; padding: 0; cursor: pointer; }
+    .theme-icon { width: 18px; height: 18px; display: none; }
+    html[data-theme="light"] .theme-icon-dark { display: block; }
+    html[data-theme="dark"] .theme-icon-light { display: block; }
+    .icon { width: 20px; height: 20px; display: block; }
     .metrics {
       display: grid;
       grid-template-columns: repeat(4, minmax(0, 1fr));
       gap: 16px;
       margin-bottom: 16px;
     }
-
     .metric-card {
       padding: 18px;
       border-radius: var(--radius-lg);
@@ -396,14 +273,7 @@ function summaryView({ summary = {} }) {
       border: 1px solid var(--line);
       box-shadow: 0 10px 28px rgba(15, 23, 42, 0.04);
     }
-
-    .metric-label {
-      color: var(--muted);
-      font-size: 13px;
-      font-weight: 650;
-      margin-bottom: 12px;
-    }
-
+    .metric-label { color: var(--muted); font-size: 13px; font-weight: 650; margin-bottom: 12px; }
     .metric-value {
       margin: 0;
       font-size: 32px;
@@ -412,19 +282,12 @@ function summaryView({ summary = {} }) {
       color: var(--text-strong);
       word-break: break-word;
     }
-
-    .metric-note {
-      margin-top: 8px;
-      color: var(--muted-2);
-      font-size: 12px;
-    }
-
+    .metric-note { margin-top: 8px; color: var(--muted-2); font-size: 12px; }
     .content-grid {
       display: grid;
       grid-template-columns: minmax(0, 1.15fr) minmax(340px, 0.85fr);
       gap: 16px;
     }
-
     .panel {
       background: var(--surface);
       border: 1px solid var(--line);
@@ -432,74 +295,18 @@ function summaryView({ summary = {} }) {
       box-shadow: var(--shadow);
       overflow: hidden;
     }
-
-    .panel-inner {
-      padding: 20px;
-    }
-
-    .panel-head {
-      padding: 18px 20px;
-      border-bottom: 1px solid var(--line);
-    }
-
-    .panel-head h2 {
-      margin: 0;
-      color: var(--text-strong);
-      font-size: 17px;
-      letter-spacing: -0.03em;
-    }
-
-    .panel-head p {
-      margin: 4px 0 0;
-      color: var(--muted);
-      font-size: 13px;
-    }
-
-    .bar-list {
-      display: grid;
-      gap: 16px;
-    }
-
-    .bar-item {
-      display: grid;
-      gap: 8px;
-    }
-
-    .bar-head {
-      display: flex;
-      justify-content: space-between;
-      gap: 12px;
-      color: var(--text);
-      font-size: 13px;
-      font-weight: 750;
-    }
-
-    .track {
-      height: 10px;
-      overflow: hidden;
-      border-radius: 999px;
-      background: var(--gray-soft);
-    }
-
-    .fill {
-      height: 100%;
-      border-radius: 999px;
-      background: var(--accent);
-      width: 0%;
-    }
-
-    .fill-blue {
-      background: var(--blue);
-    }
-
-    .fill-gray {
-      background: #9ca3af;
-    }
-
-    .latest-card {
-      padding: 20px;
-    }
-
+    .panel-inner { padding: 20px; }
+    .panel-head { padding: 18px 20px; border-bottom: 1px solid var(--line); }
+    .panel-head h2 { margin: 0; color: var(--text-strong); font-size: 17px; letter-spacing: -0.03em; }
+    .panel-head p { margin: 4px 0 0; color: var(--muted); font-size: 13px; }
+    .bar-list { display: grid; gap: 16px; }
+    .bar-item { display: grid; gap: 8px; }
+    .bar-head { display: flex; justify-content: space-between; gap: 12px; color: var(--text); font-size: 13px; font-weight: 750; }
+    .track { height: 10px; overflow: hidden; border-radius: 999px; background: var(--gray-soft); }
+    .fill { height: 100%; border-radius: 999px; background: var(--accent); width: 0%; }
+    .fill-blue { background: var(--blue); }
+    .fill-gray { background: #9ca3af; }
+    .latest-card { padding: 20px; }
     .latest-image {
       width: 100%;
       aspect-ratio: 4 / 3;
@@ -509,28 +316,9 @@ function summaryView({ summary = {} }) {
       background: var(--thumb-bg);
       border: 1px solid var(--line);
     }
-
-    .latest-image img {
-      width: 100%;
-      height: 100%;
-      object-fit: cover;
-      display: block;
-    }
-
-    .latest-title {
-      margin: 14px 0 10px;
-      color: var(--text-strong);
-      font-size: 14px;
-      line-height: 1.45;
-      word-break: break-word;
-    }
-
-    .meta {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 8px;
-    }
-
+    .latest-image img { width: 100%; height: 100%; object-fit: cover; display: block; }
+    .latest-title { margin: 14px 0 10px; color: var(--text-strong); font-size: 14px; line-height: 1.45; word-break: break-word; }
+    .meta { display: flex; flex-wrap: wrap; gap: 8px; }
     .meta span {
       padding: 6px 9px;
       border-radius: 999px;
@@ -540,7 +328,6 @@ function summaryView({ summary = {} }) {
       font-size: 12px;
       font-weight: 700;
     }
-
     .empty {
       padding: 30px 18px;
       border-radius: 18px;
@@ -551,7 +338,6 @@ function summaryView({ summary = {} }) {
       background: var(--surface-soft);
       font-size: 14px;
     }
-
     .footer-note {
       margin-top: 18px;
       display: flex;
@@ -562,77 +348,33 @@ function summaryView({ summary = {} }) {
       font-size: 12px;
       flex-wrap: wrap;
     }
-
-    .footer-note strong {
-      color: var(--muted);
-      font-weight: 750;
-    }
-
+    .footer-note strong { color: var(--muted); font-weight: 750; }
     @media (max-width: 1120px) {
-      .app {
-        grid-template-columns: 1fr;
-      }
-
-      .sidebar {
-        position: static;
-        height: auto;
-        border-right: none;
-      }
-
-      .sidebar-footer {
-        position: static;
-        margin-top: 18px;
-      }
-
-      .main {
-        padding: 20px;
-      }
-
-      .metrics,
-      .content-grid {
-        grid-template-columns: 1fr;
-      }
+      .app { grid-template-columns: 1fr; }
+      .sidebar { position: static; height: auto; border-right: none; }
+      .sidebar-footer { position: static; margin-top: 18px; }
+      .main { padding: 20px; }
+      .metrics, .content-grid { grid-template-columns: 1fr; }
     }
-
     @media (max-width: 720px) {
-      .topbar {
-        align-items: flex-start;
-        flex-direction: column;
-      }
-
-      .top-actions {
-        justify-content: flex-start;
-      }
-
-      .sidebar {
-        padding: 18px;
-      }
-
-      .main {
-        padding: 14px;
-      }
-
-      .metrics {
-        grid-template-columns: 1fr;
-      }
+      .topbar { align-items: flex-start; flex-direction: column; }
+      .top-actions { justify-content: flex-start; }
+      .sidebar { padding: 18px; }
+      .main { padding: 14px; }
+      .metrics { grid-template-columns: 1fr; }
     }
   </style>
 </head>
-
 <body>
   <div class="app">
     <aside class="sidebar">
       <div class="brand">
-        <div class="brand-mark">
-          ${iconCamera()}
-        </div>
-
+        <div class="brand-mark">${iconCamera()}</div>
         <div>
           <div class="brand-title">Capture Panel</div>
           <div class="brand-subtitle">ESP32-CAM Dataset</div>
         </div>
       </div>
-
       <nav class="nav">
         <a href="/">${iconGrid()} Dashboard</a>
         <a href="/gallery">${iconCamera()} Gallery</a>
@@ -641,86 +383,74 @@ function summaryView({ summary = {} }) {
         <a href="/docs">${iconDocs()} Docs</a>
         <a href="/status">${iconSettings()} Settings</a>
       </nav>
-
       <div class="sidebar-footer">
         <span>Current page</span>
         <strong>Summary</strong>
       </div>
     </aside>
-
     <main class="main">
       <header class="topbar">
         <div class="page-title">
           <h1>Summary</h1>
-          <p>Ringkasan jumlah data dan komposisi label.</p>
+          <p>Ringkasan jumlah data dan komposisi label dari Cloudinary.</p>
         </div>
-
         <div class="top-actions">
           <button class="theme-toggle" id="themeToggle" type="button" aria-label="Toggle dark mode">
             ${iconMoon()}
             ${iconSun()}
           </button>
-
           <a class="btn" href="/gallery">${iconCamera()} Gallery</a>
           <a class="btn btn-primary" href="/test-upload">${iconUpload()} Upload image</a>
         </div>
       </header>
-
       <section class="metrics">
         <article class="metric-card">
           <div class="metric-label">Total images</div>
           <h2 class="metric-value">${total}</h2>
-          <div class="metric-note">Sesi aktif</div>
+          <div class="metric-note">Data dari Cloudinary</div>
         </article>
-
         <article class="metric-card">
-          <div class="metric-label">Medical</div>
+          <div class="metric-label">Medis</div>
           <h2 class="metric-value">${medis}</h2>
           <div class="metric-note">${medisPercent}% dari total</div>
         </article>
-
         <article class="metric-card">
-          <div class="metric-label">Non-medical</div>
+          <div class="metric-label">Non-medis</div>
           <h2 class="metric-value">${nonMedis}</h2>
           <div class="metric-note">${nonMedisPercent}% dari total</div>
         </article>
-
         <article class="metric-card">
           <div class="metric-label">Storage</div>
           <h2 class="metric-value" style="font-size: 24px;">${formatBytes(totalBytes)}</h2>
           <div class="metric-note">Total ukuran file</div>
         </article>
       </section>
-
       <section class="content-grid">
         <div class="panel">
           <div class="panel-head">
             <h2>Dataset split</h2>
-            <p>Komposisi label dari upload yang sudah masuk.</p>
+            <p>Komposisi label dari data yang tersimpan di Cloudinary.</p>
           </div>
-
           <div class="panel-inner">
             <div class="bar-list">
               <div class="bar-item">
                 <div class="bar-head">
-                  <span>Medical</span>
+                  <span>Medis</span>
                   <span>${medisPercent}%</span>
                 </div>
                 <div class="track">
                   <div class="fill" style="width: ${medisPercent}%;"></div>
                 </div>
               </div>
-
               <div class="bar-item">
                 <div class="bar-head">
-                  <span>Non-medical</span>
+                  <span>Non-medis</span>
                   <span>${nonMedisPercent}%</span>
                 </div>
                 <div class="track">
                   <div class="fill fill-blue" style="width: ${nonMedisPercent}%;"></div>
                 </div>
               </div>
-
               <div class="bar-item">
                 <div class="bar-head">
                   <span>Unknown</span>
@@ -733,22 +463,18 @@ function summaryView({ summary = {} }) {
             </div>
           </div>
         </div>
-
         <aside class="panel latest-card">
           <div class="panel-head" style="padding: 0 0 16px; border-bottom: none;">
             <h2>Latest upload</h2>
-            <p>Capture terakhir yang masuk.</p>
+            <p>Capture terakhir yang masuk ke Cloudinary.</p>
           </div>
-
           ${
             latest
               ? `
                 <a class="latest-image" href="${latest.secure_url}" target="_blank" rel="noreferrer">
                   <img src="${latest.secure_url}" alt="Latest uploaded image" />
                 </a>
-
                 <h3 class="latest-title">${latest.public_id}</h3>
-
                 <div class="meta">
                   <span>${latest.label}</span>
                   <span>${latest.source}</span>
@@ -764,29 +490,25 @@ function summaryView({ summary = {} }) {
           }
         </aside>
       </section>
-
       <div class="footer-note">
         <span>Prototype backend · dataset summary</span>
         <strong>© ${new Date().getFullYear()} Reni Kartika Suwandi. All rights reserved.</strong>
       </div>
     </main>
   </div>
-
   <script>
     const root = document.documentElement;
     const themeToggle = document.getElementById("themeToggle");
-
     themeToggle?.addEventListener("click", () => {
       const currentTheme = root.getAttribute("data-theme");
       const nextTheme = currentTheme === "dark" ? "light" : "dark";
-
       root.setAttribute("data-theme", nextTheme);
       localStorage.setItem("capture-panel-theme", nextTheme);
     });
   </script>
 </body>
 </html>
-`;
+  `;
 }
 
 module.exports = summaryView;

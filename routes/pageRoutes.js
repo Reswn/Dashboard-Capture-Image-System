@@ -1,61 +1,20 @@
 const express = require("express");
-const cloudinary = require("cloudinary").v2;
 
-const dashboardView = require(
-  "../views/dashboardView"
-);
-
-const testUploadView = require(
-  "../views/testUploadView"
-);
-
-const galleryView = require(
-  "../views/galleryView"
-);
-
-const docsView = require(
-  "../views/docsView"
-);
-
-const summaryView = require(
-  "../views/summaryView"
-);
-
-const statusView = require(
-  "../views/statusView"
-);
+const dashboardView = require("../views/dashboardView");
+const testUploadView = require("../views/testUploadView");
+const galleryView = require("../views/galleryView");
+const docsView = require("../views/docsView");
+const summaryView = require("../views/summaryView");
+const statusView = require("../views/statusView");
 
 const {
-  getRecentUploads,
-  getUploadSummary,
-  replaceRecentUploads,
-  clearRecentUploads,
-} = require(
-  "../data/recentUploads"
-);
+  getRecentCloudinaryUploads,
+  getCloudinaryGallery,
+  getCloudinarySummary,
+  isCloudinaryReady,
+} = require("../services/cloudinaryRepository");
 
 const router = express.Router();
-
-/*
-|--------------------------------------------------------------------------
-| Parser form
-|--------------------------------------------------------------------------
-|
-| Diperlukan agar route POST seperti:
-|
-| - /sync-cloudinary
-| - /clear-local-data
-|
-| dapat membaca req.body.
-|
-*/
-
-router.use(
-  express.urlencoded({
-    extended: true,
-    limit: "1mb",
-  })
-);
 
 /*
 |--------------------------------------------------------------------------
@@ -67,105 +26,47 @@ const CLOUDINARY_FOLDER =
   process.env.CLOUDINARY_FOLDER ||
   "skripsi_dataset_medis";
 
-const DEFAULT_GALLERY_LIMIT =
-  100;
-
-const ALLOWED_GALLERY_LIMITS = [
-  20,
-  50,
-  100,
-];
-
-const CLOUDINARY_TIMEOUT_MS =
-  20000;
-
-/*
- * Menyimpan status sinkronisasi terakhir
- * selama proses server masih berjalan.
- */
-let lastSynchronization = {
-  success: null,
-
-  total:
-    getRecentUploads().length,
-
-  error: null,
-
-  syncedAt: null,
-};
+const DASHBOARD_RECENT_LIMIT = 20;
 
 /*
 |--------------------------------------------------------------------------
-| Konfigurasi Cloudinary
-|--------------------------------------------------------------------------
-*/
-
-cloudinary.config({
-  cloud_name:
-    process.env
-      .CLOUDINARY_CLOUD_NAME,
-
-  api_key:
-    process.env
-      .CLOUDINARY_API_KEY,
-
-  api_secret:
-    process.env
-      .CLOUDINARY_API_SECRET,
-});
-
-/*
-|--------------------------------------------------------------------------
-| Helper response HTML
+| Helper Response HTML
 |--------------------------------------------------------------------------
 */
 
 function sendHtml(
   res,
-  html
+  html,
+  cacheControl = "private, no-store"
 ) {
   res.setHeader(
     "Content-Type",
     "text/html; charset=utf-8"
   );
 
-  /*
-   * Mencegah browser menampilkan
-   * metadata versi cache.
-   */
   res.setHeader(
     "Cache-Control",
-    "no-store, no-cache, must-revalidate, proxy-revalidate"
+    cacheControl
   );
 
-  res.send(html);
+  return res
+    .status(200)
+    .send(html);
 }
 
 /*
 |--------------------------------------------------------------------------
-| Status konfigurasi
+| Status Konfigurasi
 |--------------------------------------------------------------------------
 */
 
 function getConfigStatus() {
   const cloudinaryReady =
-    Boolean(
-      process.env
-        .CLOUDINARY_CLOUD_NAME
-    ) &&
-    Boolean(
-      process.env
-        .CLOUDINARY_API_KEY
-    ) &&
-    Boolean(
-      process.env
-        .CLOUDINARY_API_SECRET
-    );
+    isCloudinaryReady();
 
   const deviceKeyReady =
     Boolean(
-      process.env
-        .DEVICE_SECRET_KEY
+      process.env.DEVICE_SECRET_KEY
     );
 
   return {
@@ -175,681 +76,30 @@ function getConfigStatus() {
 
     folder:
       CLOUDINARY_FOLDER,
+
+    /*
+     * Properti berikut tetap dipertahankan
+     * agar kompatibel dengan dashboardView.js.
+     *
+     * Sistem sekarang tidak lagi melakukan
+     * sinkronisasi metadata lokal.
+     */
+    syncReady:
+      cloudinaryReady,
+
+    syncMessage:
+      cloudinaryReady
+        ? "Data dibaca langsung dari Cloudinary."
+        : "Konfigurasi Cloudinary belum lengkap.",
+
+    lastSyncedAt:
+      null,
   };
 }
 
 /*
 |--------------------------------------------------------------------------
-| Normalisasi label
-|--------------------------------------------------------------------------
-*/
-
-function normalizeLabel(
-  label = ""
-) {
-  const value =
-    String(label)
-      .trim()
-      .toLowerCase();
-
-  if (
-    value === "medis"
-  ) {
-    return "medis";
-  }
-
-  if (
-    value === "non_medis" ||
-    value === "non-medis" ||
-    value === "non medis"
-  ) {
-    return "non_medis";
-  }
-
-  return null;
-}
-
-/*
- * Digunakan untuk filter dataset.
- *
- * Label yang tidak dikenali
- * dikembalikan sebagai unknown.
- */
-function normalizeDatasetLabel(
-  label = ""
-) {
-  return (
-    normalizeLabel(label) ||
-    "unknown"
-  );
-}
-
-/*
-|--------------------------------------------------------------------------
-| Normalisasi filter galeri
-|--------------------------------------------------------------------------
-*/
-
-function normalizeGalleryFilter(
-  filter = "all"
-) {
-  const value =
-    String(filter)
-      .trim()
-      .toLowerCase();
-
-  if (
-    value === "medis" ||
-    value === "non_medis" ||
-    value === "unknown"
-  ) {
-    return value;
-  }
-
-  return "all";
-}
-
-/*
-|--------------------------------------------------------------------------
-| Helper pagination
-|--------------------------------------------------------------------------
-*/
-
-function parsePositiveInteger(
-  value,
-  fallback
-) {
-  const parsedValue =
-    Number.parseInt(
-      String(value || ""),
-      10
-    );
-
-  if (
-    !Number.isInteger(
-      parsedValue
-    ) ||
-    parsedValue < 1
-  ) {
-    return fallback;
-  }
-
-  return parsedValue;
-}
-
-function parseGalleryLimit(
-  value
-) {
-  const requestedLimit =
-    parsePositiveInteger(
-      value,
-      DEFAULT_GALLERY_LIMIT
-    );
-
-  if (
-    ALLOWED_GALLERY_LIMITS
-      .includes(
-        requestedLimit
-      )
-  ) {
-    return requestedLimit;
-  }
-
-  return DEFAULT_GALLERY_LIMIT;
-}
-
-/*
-|--------------------------------------------------------------------------
-| Helper timeout
-|--------------------------------------------------------------------------
-*/
-
-function withTimeout(
-  promise,
-  timeoutMs,
-  timeoutMessage
-) {
-  let timeoutId;
-
-  const timeoutPromise =
-    new Promise(
-      (
-        resolve,
-        reject
-      ) => {
-        timeoutId =
-          setTimeout(
-            () => {
-              reject(
-                new Error(
-                  timeoutMessage
-                )
-              );
-            },
-            timeoutMs
-          );
-      }
-    );
-
-  return Promise.race([
-    promise,
-    timeoutPromise,
-  ]).finally(() => {
-    clearTimeout(
-      timeoutId
-    );
-  });
-}
-
-/*
-|--------------------------------------------------------------------------
-| Mengambil seluruh gambar Cloudinary
-|--------------------------------------------------------------------------
-|
-| Hanya dijalankan melalui tombol
-| sinkronisasi manual.
-|
-*/
-
-async function getAllCloudinaryImages() {
-  const configStatus =
-    getConfigStatus();
-
-  if (
-    !configStatus
-      .cloudinaryReady
-  ) {
-    throw new Error(
-      "Konfigurasi Cloudinary belum lengkap."
-    );
-  }
-
-  const resources = [];
-
-  let nextCursor;
-
-  do {
-    const options = {
-      resource_type:
-        "image",
-
-      type:
-        "upload",
-
-      /*
-       * Hanya mengambil gambar
-       * pada folder dataset.
-       */
-      prefix:
-        `${CLOUDINARY_FOLDER}/`,
-
-      /*
-       * Context diperlukan agar
-       * actual_label ikut dibaca.
-       */
-      context:
-        true,
-
-      /*
-       * Maksimal hasil per request
-       * Cloudinary.
-       */
-      max_results:
-        500,
-    };
-
-    if (nextCursor) {
-      options.next_cursor =
-        nextCursor;
-    }
-
-    const result =
-      await withTimeout(
-        cloudinary.api.resources(
-          options
-        ),
-
-        CLOUDINARY_TIMEOUT_MS,
-
-        "Permintaan Cloudinary melebihi batas waktu."
-      );
-
-    if (
-      Array.isArray(
-        result.resources
-      )
-    ) {
-      resources.push(
-        ...result.resources
-      );
-    }
-
-    nextCursor =
-      result.next_cursor ||
-      undefined;
-  } while (nextCursor);
-
-  return resources;
-}
-
-/*
-|--------------------------------------------------------------------------
-| Helper public_id
-|--------------------------------------------------------------------------
-*/
-
-function getFileNameFromPublicId(
-  publicId = ""
-) {
-  return (
-    String(publicId)
-      .split("/")
-      .pop() ||
-    ""
-  );
-}
-
-/*
-|--------------------------------------------------------------------------
-| Mendapatkan label dari public_id
-|--------------------------------------------------------------------------
-|
-| Hanya digunakan sebagai fallback.
-|
-*/
-
-function extractLabelFromPublicId(
-  publicId = ""
-) {
-  const fileName =
-    getFileNameFromPublicId(
-      publicId
-    ).toLowerCase();
-
-  /*
-   * Non-medis diperiksa lebih dahulu
-   * karena mengandung kata medis.
-   */
-  if (
-    fileName.startsWith(
-      "non_medis_"
-    ) ||
-    fileName.startsWith(
-      "non-medis_"
-    ) ||
-    fileName.startsWith(
-      "non medis_"
-    )
-  ) {
-    return "non_medis";
-  }
-
-  if (
-    fileName.startsWith(
-      "medis_"
-    )
-  ) {
-    return "medis";
-  }
-
-  return "unknown";
-}
-
-/*
-|--------------------------------------------------------------------------
-| Mendapatkan sumber dari public_id
-|--------------------------------------------------------------------------
-*/
-
-function extractSourceFromPublicId(
-  publicId = ""
-) {
-  const fileName =
-    getFileNameFromPublicId(
-      publicId
-    ).toLowerCase();
-
-  if (
-    fileName.includes(
-      "_button_"
-    )
-  ) {
-    return "button";
-  }
-
-  if (
-    fileName.includes(
-      "_manual_"
-    )
-  ) {
-    return "manual";
-  }
-
-  if (
-    fileName.includes(
-      "_web_"
-    )
-  ) {
-    return "web";
-  }
-
-  if (
-    fileName.includes(
-      "_test_"
-    )
-  ) {
-    return "manual-test";
-  }
-
-  if (
-    fileName.includes(
-      "_esp32cam_"
-    )
-  ) {
-    return "esp32cam";
-  }
-
-  return "esp32cam";
-}
-
-/*
-|--------------------------------------------------------------------------
-| Context label Cloudinary
-|--------------------------------------------------------------------------
-*/
-
-function getCloudinaryContextLabel(
-  cloudinaryImage = {}
-) {
-  return normalizeLabel(
-    cloudinaryImage
-      ?.context
-      ?.custom
-      ?.actual_label
-  );
-}
-
-/*
-|--------------------------------------------------------------------------
-| Sinkronisasi Cloudinary dengan uploads.json
-|--------------------------------------------------------------------------
-*/
-
-async function synchronizeCloudinaryData() {
-  const cloudinaryImages =
-    await getAllCloudinaryImages();
-
-  const localUploads =
-    getRecentUploads();
-
-  /*
-   * Proteksi agar respons kosong akibat:
-   *
-   * - prefix folder salah;
-   * - koneksi Cloudinary bermasalah;
-   * - konfigurasi folder tidak sesuai;
-   *
-   * tidak langsung menghapus seluruh
-   * metadata lokal.
-   *
-   * Jika Cloudinary memang sudah kosong,
-   * gunakan tombol Hapus data lokal.
-   */
-  if (
-    cloudinaryImages.length === 0 &&
-    localUploads.length > 0
-  ) {
-    throw new Error(
-      "Cloudinary tidak mengembalikan gambar. Data lokal tidak diganti. Gunakan tombol Hapus data lokal jika seluruh file Cloudinary memang sudah dihapus."
-    );
-  }
-
-  const localUploadMap =
-    new Map(
-      localUploads.map(
-        (item) => [
-          item.public_id,
-          item,
-        ]
-      )
-    );
-
-  const synchronizedUploads =
-    cloudinaryImages.map(
-      (cloudinaryImage) => {
-        const publicId =
-          cloudinaryImage
-            .public_id;
-
-        const localData =
-          localUploadMap.get(
-            publicId
-          );
-
-        /*
-         * Prioritas pertama:
-         * label koreksi manual lokal.
-         */
-        const manualLocalLabel =
-          localData
-            ?.label_updated_at
-            ? normalizeLabel(
-                localData.label
-              )
-            : null;
-
-        /*
-         * Prioritas kedua:
-         * context Cloudinary.
-         */
-        const cloudinaryLabel =
-          getCloudinaryContextLabel(
-            cloudinaryImage
-          );
-
-        /*
-         * Prioritas ketiga:
-         * label lokal biasa.
-         */
-        const localLabel =
-          normalizeLabel(
-            localData?.label
-          );
-
-        /*
-         * Prioritas terakhir:
-         * nama public_id.
-         */
-        const publicIdLabel =
-          normalizeLabel(
-            extractLabelFromPublicId(
-              publicId
-            )
-          );
-
-        const label =
-          manualLocalLabel ||
-          cloudinaryLabel ||
-          localLabel ||
-          publicIdLabel ||
-          "unknown";
-
-        return {
-          id:
-            localData?.id ||
-            cloudinaryImage
-              .asset_id ||
-            publicId,
-
-          label,
-
-          source:
-            localData?.source ||
-            extractSourceFromPublicId(
-              publicId
-            ),
-
-          public_id:
-            publicId,
-
-          secure_url:
-            cloudinaryImage
-              .secure_url ||
-            localData
-              ?.secure_url ||
-            localData
-              ?.image_url ||
-            "",
-
-          image_url:
-            cloudinaryImage
-              .secure_url ||
-            localData
-              ?.image_url ||
-            localData
-              ?.secure_url ||
-            "",
-
-          width:
-            Number(
-              cloudinaryImage
-                .width
-            ) ||
-            Number(
-              localData?.width
-            ) ||
-            null,
-
-          height:
-            Number(
-              cloudinaryImage
-                .height
-            ) ||
-            Number(
-              localData?.height
-            ) ||
-            null,
-
-          format:
-            cloudinaryImage
-              .format ||
-            localData?.format ||
-            "jpg",
-
-          bytes:
-            Number(
-              cloudinaryImage
-                .bytes
-            ) ||
-            Number(
-              localData?.bytes
-            ) ||
-            0,
-
-          created_at:
-            cloudinaryImage
-              .created_at ||
-            localData
-              ?.created_at ||
-            new Date()
-              .toISOString(),
-
-          /*
-           * Waktu koreksi manual
-           * wajib dipertahankan.
-           */
-          label_updated_at:
-            localData
-              ?.label_updated_at ||
-            null,
-        };
-      }
-    );
-
-  /*
-   * Gambar terbaru ditempatkan
-   * pada urutan paling atas.
-   */
-  synchronizedUploads.sort(
-    (
-      firstItem,
-      secondItem
-    ) => {
-      return (
-        new Date(
-          secondItem.created_at
-        ).getTime() -
-        new Date(
-          firstItem.created_at
-        ).getTime()
-      );
-    }
-  );
-
-  replaceRecentUploads(
-    synchronizedUploads
-  );
-
-  return synchronizedUploads;
-}
-
-/*
-|--------------------------------------------------------------------------
-| Sinkronisasi aman
-|--------------------------------------------------------------------------
-*/
-
-async function safelySynchronizeCloudinary() {
-  try {
-    const synchronizedUploads =
-      await synchronizeCloudinaryData();
-
-    lastSynchronization = {
-      success:
-        true,
-
-      total:
-        synchronizedUploads
-          .length,
-
-      error:
-        null,
-
-      syncedAt:
-        new Date()
-          .toISOString(),
-    };
-  } catch (error) {
-    console.error(
-      "Gagal menyinkronkan data Cloudinary:",
-      error.message
-    );
-
-    lastSynchronization = {
-      success:
-        false,
-
-      total:
-        getRecentUploads()
-          .length,
-
-      error:
-        error.message ||
-        "Terjadi kesalahan saat sinkronisasi Cloudinary.",
-
-      syncedAt:
-        null,
-    };
-  }
-
-  return {
-    ...lastSynchronization,
-  };
-}
-
-/*
-|--------------------------------------------------------------------------
-| Notifikasi galeri
+| Notifikasi Gallery
 |--------------------------------------------------------------------------
 */
 
@@ -865,8 +115,7 @@ function getGalleryNotification(
 
       message:
         String(
-          req.query
-            .label_error
+          req.query.label_error
         ),
     };
   }
@@ -880,38 +129,7 @@ function getGalleryNotification(
 
       message:
         String(
-          req.query
-            .label_updated
-        ),
-    };
-  }
-
-  if (
-    req.query.sync_error
-  ) {
-    return {
-      type:
-        "error",
-
-      message:
-        String(
-          req.query
-            .sync_error
-        ),
-    };
-  }
-
-  if (
-    req.query.sync_success
-  ) {
-    return {
-      type:
-        "success",
-
-      message:
-        String(
-          req.query
-            .sync_success
+          req.query.label_updated
         ),
     };
   }
@@ -921,167 +139,49 @@ function getGalleryNotification(
 
 /*
 |--------------------------------------------------------------------------
-| Membuat pagination galeri
-|--------------------------------------------------------------------------
-*/
-
-function buildGalleryPagination(
-  allUploads,
-  req
-) {
-  const selectedLabel =
-    normalizeGalleryFilter(
-      req.query.label
-    );
-
-  const limit =
-    parseGalleryLimit(
-      req.query.limit
-    );
-
-  const requestedPage =
-    parsePositiveInteger(
-      req.query.page,
-      1
-    );
-
-  /*
-   * Filter dijalankan sebelum
-   * pagination.
-   */
-  const filteredUploads =
-    selectedLabel === "all"
-      ? allUploads
-      : allUploads.filter(
-          (item) =>
-            normalizeDatasetLabel(
-              item.label
-            ) === selectedLabel
-        );
-
-  const totalItems =
-    filteredUploads.length;
-
-  const totalPages =
-    Math.max(
-      1,
-
-      Math.ceil(
-        totalItems /
-        limit
-      )
-    );
-
-  /*
-   * Mencegah halaman melebihi
-   * jumlah halaman yang tersedia.
-   */
-  const page =
-    Math.min(
-      requestedPage,
-      totalPages
-    );
-
-  const startIndex =
-    (page - 1) *
-    limit;
-
-  const endIndex =
-    Math.min(
-      startIndex +
-      limit,
-
-      totalItems
-    );
-
-  const uploads =
-    filteredUploads.slice(
-      startIndex,
-      endIndex
-    );
-
-  return {
-    uploads,
-
-    pagination: {
-      page,
-
-      limit,
-
-      totalItems,
-
-      totalPages,
-
-      selectedLabel,
-
-      startItem:
-        totalItems === 0
-          ? 0
-          : startIndex + 1,
-
-      endItem:
-        endIndex,
-
-      hasPreviousPage:
-        page > 1,
-
-      hasNextPage:
-        page < totalPages,
-
-      previousPage:
-        page > 1
-          ? page - 1
-          : null,
-
-      nextPage:
-        page < totalPages
-          ? page + 1
-          : null,
-
-      allowedLimits: [
-        ...ALLOWED_GALLERY_LIMITS,
-      ],
-    },
-  };
-}
-
-/*
-|--------------------------------------------------------------------------
-| Format uptime
+| Format Uptime
 |--------------------------------------------------------------------------
 */
 
 function formatUptime(
   seconds = 0
 ) {
+  const safeSeconds =
+    Number.isFinite(
+      Number(seconds)
+    )
+      ? Math.max(
+          0,
+          Number(seconds)
+        )
+      : 0;
+
   const days =
     Math.floor(
-      seconds /
-      86400
+      safeSeconds /
+        86400
     );
 
   const hours =
     Math.floor(
       (
-        seconds %
+        safeSeconds %
         86400
-      ) /
-      3600
+      ) / 3600
     );
 
   const minutes =
     Math.floor(
       (
-        seconds %
+        safeSeconds %
         3600
-      ) /
-      60
+      ) / 60
     );
 
   const secs =
     Math.floor(
-      seconds %
-      60
+      safeSeconds %
+        60
     );
 
   if (
@@ -1118,108 +218,76 @@ function formatUptime(
 
 /*
 |--------------------------------------------------------------------------
-| Health check
-|--------------------------------------------------------------------------
-*/
-
-router.get(
-  "/health",
-
-  (req, res) => {
-    return res
-      .status(200)
-      .json({
-        success:
-          true,
-
-        message:
-          "Server aktif.",
-
-        uptime_seconds:
-          Math.floor(
-            process.uptime()
-          ),
-      });
-  }
-);
-
-/*
-|--------------------------------------------------------------------------
 | Dashboard
 |--------------------------------------------------------------------------
 |
-| Dashboard hanya membaca data lokal.
-| Tidak melakukan sinkronisasi otomatis.
+| Recent capture dan summary dibaca langsung
+| dari Cloudinary.
 |
 */
 
 router.get(
   "/",
 
-  (req, res) => {
-    /*
-     * Dashboard hanya menampilkan
-     * 12 data terbaru.
-     */
-    const uploads =
-      getRecentUploads()
-        .slice(
-          0,
-          15
-        );
-
-    const summary =
-      getUploadSummary();
-
-    const baseConfig =
-      getConfigStatus();
-
-    const config = {
-      ...baseConfig,
-
-      syncReady:
-        lastSynchronization
-          .success !== false,
-
-      syncMessage:
-        lastSynchronization
-          .success === true
-          ? `${lastSynchronization.total} gambar terakhir berhasil disinkronkan`
-          : lastSynchronization
-              .success === false
-          ? `Sinkronisasi terakhir gagal: ${lastSynchronization.error}`
-          : "Data lokal siap. Sinkronisasi Cloudinary dijalankan secara manual.",
-
-      lastSyncedAt:
-        lastSynchronization
-          .syncedAt,
-    };
-
-    sendHtml(
-      res,
-
-      dashboardView({
+  async (
+    req,
+    res,
+    next
+  ) => {
+    try {
+      const [
         uploads,
-
         summary,
+      ] =
+        await Promise.all([
+          getRecentCloudinaryUploads(
+            DASHBOARD_RECENT_LIMIT
+          ),
 
-        config,
-      })
-    );
+          getCloudinarySummary(),
+        ]);
+
+      const config =
+        getConfigStatus();
+
+      return sendHtml(
+        res,
+
+        dashboardView({
+          uploads,
+
+          summary,
+
+          config,
+        }),
+
+        /*
+         * Dashboard disimpan pada cache CDN
+         * selama 60 detik untuk mengurangi
+         * permintaan berulang ke Cloudinary.
+         */
+        "public, s-maxage=60, stale-while-revalidate=300"
+      );
+    } catch (error) {
+      return next(error);
+    }
   }
 );
 
 /*
 |--------------------------------------------------------------------------
-| Upload manual
+| Upload Manual
 |--------------------------------------------------------------------------
 */
 
 router.get(
   "/test-upload",
 
-  (req, res) => {
-    sendHtml(
+  (
+    req,
+    res
+  ) => {
+    return sendHtml(
       res,
       testUploadView()
     );
@@ -1228,238 +296,79 @@ router.get(
 
 /*
 |--------------------------------------------------------------------------
-| Galeri dengan pagination
+| Gallery
 |--------------------------------------------------------------------------
+|
+| Gallery menggunakan next_cursor dari Cloudinary.
+|
+| Contoh URL:
+|
+| /gallery?limit=100&label=medis
+|
+| Halaman berikutnya:
+|
+| /gallery?cursor=NEXT_CURSOR&limit=100&label=medis
+|
 */
 
 router.get(
   "/gallery",
 
-  (req, res) => {
-    const allUploads =
-      getRecentUploads();
-
-    const summary =
-      getUploadSummary();
-
-    const {
-      uploads,
-      pagination,
-    } =
-      buildGalleryPagination(
-        allUploads,
-        req
-      );
-
-    const notification =
-      getGalleryNotification(
-        req
-      );
-
-    sendHtml(
-      res,
-
-      galleryView({
-        uploads,
-
-        summary,
-
-        pagination,
-
-        notification,
-      })
-    );
-  }
-);
-
-/*
-|--------------------------------------------------------------------------
-| Sinkronisasi Cloudinary manual
-|--------------------------------------------------------------------------
-|
-| POST /sync-cloudinary
-|
-*/
-
-router.post(
-  "/sync-cloudinary",
-
-  async (req, res) => {
-    const synchronization =
-      await safelySynchronizeCloudinary();
-
-    /*
-     * Filter dan limit dipertahankan
-     * setelah sinkronisasi.
-     */
-    const selectedLabel =
-      normalizeGalleryFilter(
-        req.body?.label ||
-        req.query?.label
-      );
-
-    const limit =
-      parseGalleryLimit(
-        req.body?.limit ||
-        req.query?.limit
-      );
-
-    const query =
-      new URLSearchParams({
-        page:
-          "1",
-
-        limit:
-          String(limit),
-
-        label:
-          selectedLabel,
-      });
-
-    if (
-      synchronization.success
-    ) {
-      query.set(
-        "sync_success",
-
-        `${synchronization.total} gambar berhasil disinkronkan.`
-      );
-    } else {
-      query.set(
-        "sync_error",
-
-        `Sinkronisasi gagal. Data lokal tetap digunakan. ${synchronization.error}`
-      );
-    }
-
-    return res.redirect(
-      303,
-
-      `/gallery?${query.toString()}`
-    );
-  }
-);
-
-/*
-|--------------------------------------------------------------------------
-| Menghapus seluruh metadata lokal
-|--------------------------------------------------------------------------
-|
-| POST /clear-local-data
-|
-| Route ini:
-|
-| - menghapus seluruh isi uploads.json;
-| - mengosongkan dashboard;
-| - mengosongkan galeri;
-| - mengosongkan summary;
-| - tidak menghapus file Cloudinary.
-|
-*/
-
-router.post(
-  "/clear-local-data",
-
-  (req, res) => {
+  async (
+    req,
+    res,
+    next
+  ) => {
     try {
-      /*
-       * Simpan jumlah data sebelum
-       * dihapus untuk notifikasi.
-       */
-      const deletedCount =
-        getRecentUploads()
-          .length;
+      const [
+        galleryResult,
+        summary,
+      ] =
+        await Promise.all([
+          getCloudinaryGallery({
+            cursor:
+              req.query.cursor,
 
-      /*
-       * Menghapus seluruh metadata
-       * melalui recentUploads.js.
-       */
-      clearRecentUploads();
+            limit:
+              req.query.limit,
 
-      /*
-       * Reset status sinkronisasi agar
-       * dashboard tidak menampilkan
-       * jumlah data lama.
-       */
-      lastSynchronization = {
-        success:
-          null,
+            label:
+              req.query.label ||
+              "all",
+          }),
 
-        total:
-          0,
+          getCloudinarySummary(),
+        ]);
 
-        error:
-          null,
-
-        syncedAt:
-          null,
-      };
-
-      console.log(
-        "Metadata lokal berhasil dihapus:",
-        {
-          deleted_count:
-            deletedCount,
-        }
-      );
-
-      const limit =
-        parseGalleryLimit(
-          req.body?.limit ||
-          req.query?.limit
+      const notification =
+        getGalleryNotification(
+          req
         );
 
-      const query =
-        new URLSearchParams({
-          page:
-            "1",
+      return sendHtml(
+        res,
 
-          limit:
-            String(limit),
+        galleryView({
+          uploads:
+            galleryResult.uploads,
 
-          label:
-            "all",
+          summary,
 
-          sync_success:
-            deletedCount > 0
-              ? `${deletedCount} metadata lokal berhasil dihapus. File Cloudinary tidak terpengaruh.`
-              : "Metadata lokal sudah kosong.",
-        });
+          pagination:
+            galleryResult.pagination,
 
-      return res.redirect(
-        303,
+          notification,
+        }),
 
-        `/gallery?${query.toString()}`
+        /*
+         * Gallery tidak menggunakan cache CDN
+         * agar perubahan label dan cursor terbaru
+         * langsung terlihat.
+         */
+        "private, no-store, max-age=0"
       );
     } catch (error) {
-      console.error(
-        "Gagal menghapus metadata lokal:",
-        error
-      );
-
-      const query =
-        new URLSearchParams({
-          page:
-            "1",
-
-          limit:
-            String(
-              DEFAULT_GALLERY_LIMIT
-            ),
-
-          label:
-            "all",
-
-          sync_error:
-            error.message ||
-            "Metadata lokal gagal dihapus.",
-        });
-
-      return res.redirect(
-        303,
-
-        `/gallery?${query.toString()}`
-      );
+      return next(error);
     }
   }
 );
@@ -1473,17 +382,27 @@ router.post(
 router.get(
   "/summary",
 
-  (req, res) => {
-    const summary =
-      getUploadSummary();
+  async (
+    req,
+    res,
+    next
+  ) => {
+    try {
+      const summary =
+        await getCloudinarySummary();
 
-    sendHtml(
-      res,
+      return sendHtml(
+        res,
 
-      summaryView({
-        summary,
-      })
-    );
+        summaryView({
+          summary,
+        }),
+
+        "public, s-maxage=60, stale-while-revalidate=300"
+      );
+    } catch (error) {
+      return next(error);
+    }
   }
 );
 
@@ -1496,24 +415,33 @@ router.get(
 router.get(
   "/docs",
 
-  (req, res) => {
-    sendHtml(
+  (
+    req,
+    res
+  ) => {
+    return sendHtml(
       res,
-      docsView()
+
+      docsView(),
+
+      "public, s-maxage=3600, stale-while-revalidate=86400"
     );
   }
 );
 
 /*
 |--------------------------------------------------------------------------
-| Status backend
+| Status Backend
 |--------------------------------------------------------------------------
 */
 
 router.get(
   "/status",
 
-  (req, res) => {
+  (
+    req,
+    res
+  ) => {
     const config = {
       deviceKeyReady:
         Boolean(
@@ -1539,13 +467,18 @@ router.get(
             .CLOUDINARY_API_SECRET
         ),
 
+      cloudinaryReady:
+        isCloudinaryReady(),
+
       folder:
         CLOUDINARY_FOLDER,
     };
 
     const server = {
       port:
-        process.env.PORT ||
+        Number(
+          process.env.PORT
+        ) ||
         5000,
 
       env:
@@ -1557,9 +490,15 @@ router.get(
         formatUptime(
           process.uptime()
         ),
+
+      platform:
+        process.env.VERCEL ===
+        "1"
+          ? "vercel"
+          : "local",
     };
 
-    sendHtml(
+    return sendHtml(
       res,
 
       statusView({
@@ -1572,4 +511,3 @@ router.get(
 );
 
 module.exports = router;
-

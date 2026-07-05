@@ -22,54 +22,14 @@ function escapeHtml(value = "") {
     .replace(/'/g, "&#039;");
 }
 
-function normalizeLabel(label = "") {
-  const value = String(label)
-    .trim()
-    .toLowerCase();
-
-  if (value === "medis") {
-    return "medis";
-  }
-
-  if (
-    [
-      "non_medis",
-      "non-medis",
-      "non medis",
-    ].includes(value)
-  ) {
-    return "non_medis";
-  }
-
-  return "unknown";
-}
-
-function formatLabel(label = "") {
-  const value =
-    normalizeLabel(label);
-
-  if (value === "medis") {
-    return "Medis";
-  }
-
-  if (value === "non_medis") {
-    return "Non-medis";
-  }
-
-  return "Unknown";
-}
-
 function safeNumber(
   value,
   fallback = 0
 ) {
-  const parsed =
-    Number(value);
+  const parsed = Number(value);
 
-  return (
-    Number.isFinite(parsed) &&
+  return Number.isFinite(parsed) &&
     parsed >= 0
-  )
     ? parsed
     : fallback;
 }
@@ -88,65 +48,142 @@ function clamp(
   );
 }
 
+function normalizeLabel(
+  label = ""
+) {
+  const value = String(label)
+    .trim()
+    .toLowerCase()
+    .replace(
+      /[\s-]+/g,
+      "_"
+    );
+
+  if (value === "medis") {
+    return "medis";
+  }
+
+  if (value === "non_medis") {
+    return "non_medis";
+  }
+
+  return "unknown";
+}
+
+function formatLabel(
+  label = ""
+) {
+  const normalized =
+    normalizeLabel(label);
+
+  if (normalized === "medis") {
+    return "Medis";
+  }
+
+  if (
+    normalized ===
+    "non_medis"
+  ) {
+    return "Non-medis";
+  }
+
+  return "Unknown";
+}
+
+function normalizeFilter(
+  label = "all"
+) {
+  const value = String(label)
+    .trim()
+    .toLowerCase()
+    .replace(
+      /[\s-]+/g,
+      "_"
+    );
+
+  return [
+    "all",
+    "medis",
+    "non_medis",
+    "unknown",
+  ].includes(value)
+    ? value
+    : "all";
+}
+
+function normalizeLimit(
+  value
+) {
+  const parsed = Math.trunc(
+    safeNumber(
+      value,
+      100
+    )
+  );
+
+  return [
+    20,
+    50,
+    100,
+  ].includes(parsed)
+    ? parsed
+    : 100;
+}
+
+/*
+|--------------------------------------------------------------------------
+| Membuat URL Gallery
+|--------------------------------------------------------------------------
+|
+| cursor digunakan sebagai pagination utama.
+|
+| page hanya digunakan sebagai fallback sementara
+| apabila repository lama masih mengirim nextPage.
+|
+*/
+
 function buildGalleryUrl({
-  page = 1,
+  cursor = "",
+  page = null,
   limit = 100,
   label = "all",
 } = {}) {
   const query =
     new URLSearchParams({
-      page:
-        String(page),
-
       limit:
-        String(limit),
+        String(
+          normalizeLimit(limit)
+        ),
 
       label:
-        String(label),
+        normalizeFilter(label),
     });
+
+  const safeCursor =
+    String(
+      cursor || ""
+    ).trim();
+
+  if (safeCursor) {
+    query.set(
+      "cursor",
+      safeCursor
+    );
+  } else if (
+    Number.isInteger(
+      Number(page)
+    ) &&
+    Number(page) > 1
+  ) {
+    query.set(
+      "page",
+      String(Number(page))
+    );
+  }
 
   return (
     `/gallery?${query.toString()}`
   );
-}
-
-function buildPageNumbers(
-  currentPage,
-  totalPages
-) {
-  const pages =
-    new Set([
-      1,
-      totalPages,
-    ]);
-
-  for (
-    let page =
-      currentPage - 2;
-
-    page <=
-    currentPage + 2;
-
-    page += 1
-  ) {
-    if (
-      page >= 1 &&
-      page <= totalPages
-    ) {
-      pages.add(page);
-    }
-  }
-
-  return Array
-    .from(pages)
-    .sort(
-      (
-        firstPage,
-        secondPage
-      ) =>
-        firstPage -
-        secondPage
-    );
 }
 
 /*
@@ -279,26 +316,6 @@ function icon(
       />
     `,
 
-    trash: `
-      <path
-        d="M4 7h16M9 7V4h6v3m-8 0 1 14h8l1-14M10 11v6m4-6v6"
-        stroke="currentColor"
-        stroke-width="1.8"
-        stroke-linecap="round"
-        stroke-linejoin="round"
-      />
-    `,
-
-    chevronLeft: `
-      <path
-        d="m15 18-6-6 6-6"
-        stroke="currentColor"
-        stroke-width="1.9"
-        stroke-linecap="round"
-        stroke-linejoin="round"
-      />
-    `,
-
     chevronRight: `
       <path
         d="m9 18 6-6-6-6"
@@ -324,12 +341,8 @@ function icon(
 
 /*
 |--------------------------------------------------------------------------
-| Ikon khusus logo sidebar
+| Ikon Logo
 |--------------------------------------------------------------------------
-|
-| Kelas khusus mencegah ikon mewarisi warna putih
-| dari elemen sidebar.
-|
 */
 
 function brandCameraIcon() {
@@ -341,7 +354,7 @@ function brandCameraIcon() {
 
 /*
 |--------------------------------------------------------------------------
-| Ikon tema
+| Ikon Tema
 |--------------------------------------------------------------------------
 */
 
@@ -413,6 +426,12 @@ function galleryView({
         )
       : [];
 
+  /*
+  |--------------------------------------------------------------------------
+  | Summary
+  |--------------------------------------------------------------------------
+  */
+
   const total =
     safeNumber(
       summary.total,
@@ -437,36 +456,16 @@ function galleryView({
       0
     );
 
-  const page =
-    Math.max(
-      1,
-
-      Math.trunc(
-        safeNumber(
-          pagination.page,
-          1
-        )
-      )
-    );
-
-  const requestedLimit =
-    Math.trunc(
-      safeNumber(
-        pagination.limit,
-        100
-      )
-    );
+  /*
+  |--------------------------------------------------------------------------
+  | Pagination
+  |--------------------------------------------------------------------------
+  */
 
   const limit =
-    [
-      20,
-      50,
-      100,
-    ].includes(
-      requestedLimit
-    )
-      ? requestedLimit
-      : 100;
+    normalizeLimit(
+      pagination.limit
+    );
 
   const totalItems =
     Math.trunc(
@@ -476,56 +475,53 @@ function galleryView({
       )
     );
 
-  const totalPages =
-    Math.max(
-      1,
-
-      Math.trunc(
-        safeNumber(
-          pagination.totalPages,
-          1
-        )
-      )
-    );
-
   const selectedLabel =
-    [
-      "all",
-      "medis",
-      "non_medis",
-      "unknown",
-    ].includes(
-      pagination.selectedLabel
-    )
-      ? pagination.selectedLabel
-      : "all";
-
-  const startItem =
-    Math.trunc(
-      safeNumber(
-        pagination.startItem,
-
-        pageUploads.length > 0
-          ? (
-              page - 1
-            ) *
-              limit +
-            1
-          : 0
-      )
+    normalizeFilter(
+      pagination.selectedLabel ||
+        pagination.label ||
+        "all"
     );
 
-  const endItem =
-    Math.trunc(
-      safeNumber(
-        pagination.endItem,
+  const currentCursor =
+    String(
+      pagination.cursor || ""
+    ).trim();
 
-        Math.min(
-          page * limit,
-          totalItems
-        )
-      )
+  const nextCursor =
+    String(
+      pagination.nextCursor ||
+        pagination.next_cursor ||
+        ""
+    ).trim();
+
+  /*
+   * Fallback sementara untuk repository
+   * yang masih menggunakan pagination angka.
+   */
+
+  const fallbackNextPage =
+    Number(
+      pagination.nextPage
     );
+
+  const hasCursorNext =
+    Boolean(nextCursor);
+
+  const hasFallbackNext =
+    !hasCursorNext &&
+    pagination.hasNextPage ===
+      true &&
+    Number.isInteger(
+      fallbackNextPage
+    ) &&
+    fallbackNextPage > 1;
+
+  const hasMore =
+    pagination.hasMore ===
+    false
+      ? false
+      : hasCursorNext ||
+        hasFallbackNext;
 
   const requestedLimits =
     Array.isArray(
@@ -552,6 +548,46 @@ function galleryView({
           50,
           100,
         ];
+
+  const nextUrl =
+    hasCursorNext
+      ? buildGalleryUrl({
+          cursor:
+            nextCursor,
+
+          limit,
+
+          label:
+            selectedLabel,
+        })
+      : hasFallbackNext
+      ? buildGalleryUrl({
+          page:
+            fallbackNextPage,
+
+          limit,
+
+          label:
+            selectedLabel,
+        })
+      : "#";
+
+  const reloadUrl =
+    buildGalleryUrl({
+      cursor:
+        "",
+
+      limit,
+
+      label:
+        selectedLabel,
+    });
+
+  /*
+  |--------------------------------------------------------------------------
+  | Progress
+  |--------------------------------------------------------------------------
+  */
 
   const totalProgress =
     clamp(
@@ -702,9 +738,13 @@ function galleryView({
                   : ""
               }"
               href="${buildGalleryUrl({
-                page: 1,
+                cursor:
+                  "",
+
                 limit,
-                label: value,
+
+                label:
+                  value,
               })}"
               ${
                 active
@@ -727,7 +767,7 @@ function galleryView({
 
   /*
   |--------------------------------------------------------------------------
-  | Kartu gambar
+  | Kartu Gambar
   |--------------------------------------------------------------------------
   */
 
@@ -742,26 +782,26 @@ function galleryView({
               const rawPublicId =
                 String(
                   item.public_id ||
-                  ""
+                    ""
                 ).trim();
 
               const publicId =
                 escapeHtml(
                   rawPublicId ||
-                  "-"
+                    "-"
                 );
 
               const imageUrl =
                 escapeHtml(
                   item.secure_url ||
-                  item.image_url ||
-                  ""
+                    item.image_url ||
+                    ""
                 );
 
               const sourceRaw =
                 String(
                   item.source ||
-                  "esp32cam"
+                    "esp32cam"
                 );
 
               const source =
@@ -773,7 +813,7 @@ function galleryView({
                 escapeHtml(
                   String(
                     item.format ||
-                    "jpg"
+                      "jpg"
                   ).toUpperCase()
                 );
 
@@ -854,10 +894,7 @@ function galleryView({
                     <span
                       class="card-number"
                     >
-                      #${
-                        startItem +
-                        index
-                      }
+                      #${index + 1}
                     </span>
                   </div>
 
@@ -962,7 +999,7 @@ function galleryView({
                       <span>
                         ${formatBytes(
                           item.bytes ||
-                          0
+                            0
                         )}
                       </span>
 
@@ -974,7 +1011,7 @@ function galleryView({
                     <form
                       class="single-label-form"
                       method="POST"
-                      action="/api/update-label-form"
+                      action="/api/update-label"
                     >
                       <input
                         type="hidden"
@@ -986,8 +1023,10 @@ function galleryView({
 
                       <input
                         type="hidden"
-                        name="page"
-                        value="${page}"
+                        name="cursor"
+                        value="${escapeHtml(
+                          currentCursor
+                        )}"
                       />
 
                       <input
@@ -1014,8 +1053,8 @@ function galleryView({
                         </label>
 
                         <small>
-                          Perubahan disimpan
-                          sebagai label manual.
+                          Perubahan langsung
+                          disimpan ke Cloudinary.
                         </small>
                       </div>
 
@@ -1099,89 +1138,26 @@ function galleryView({
 
           <p>
             Gunakan filter lain
-            atau jalankan sinkronisasi
-            Cloudinary secara manual.
+            atau muat ulang data
+            dari Cloudinary.
           </p>
 
           <a
             class="btn btn-primary"
             href="${buildGalleryUrl({
-              page: 1,
+              cursor:
+                "",
+
               limit,
-              label: "all",
+
+              label:
+                "all",
             })}"
           >
             Tampilkan semua data
           </a>
         </div>
       `;
-
-  /*
-  |--------------------------------------------------------------------------
-  | Pagination
-  |--------------------------------------------------------------------------
-  */
-
-  let previousPageNumber =
-    null;
-
-  const numberedLinks =
-    buildPageNumbers(
-      page,
-      totalPages
-    )
-      .map(
-        (pageNumber) => {
-          const gap =
-            previousPageNumber !==
-              null &&
-            pageNumber -
-              previousPageNumber >
-              1
-              ? `
-                <span
-                  class="page-gap"
-                >
-                  …
-                </span>
-              `
-              : "";
-
-          previousPageNumber =
-            pageNumber;
-
-          return `
-            ${gap}
-
-            <a
-              class="page-number ${
-                pageNumber ===
-                page
-                  ? "active"
-                  : ""
-              }"
-              href="${buildGalleryUrl({
-                page:
-                  pageNumber,
-
-                limit,
-
-                label:
-                  selectedLabel,
-              })}"
-              ${
-                pageNumber ===
-                page
-                  ? 'aria-current="page"'
-                  : ""
-              }
-            >
-              ${pageNumber}
-            </a>
-          `;
-        }
-      )
-      .join("");
 
   /*
   |--------------------------------------------------------------------------
@@ -1208,6 +1184,7 @@ function galleryView({
   <title>
     Galeri Dataset Limbah · Capture Panel
   </title>
+
   <link
     rel="icon"
     type="image/svg+xml"
@@ -1216,10 +1193,6 @@ function galleryView({
 
   <script>
     (function () {
-      /*
-       * Gallery memiliki penyimpanan
-       * tema sendiri.
-       */
       const THEME_KEY =
         "capture-panel-gallery-theme";
 
@@ -1244,8 +1217,10 @@ function galleryView({
         ).matches;
 
       const initialTheme =
-        savedTheme === "dark" ||
-        savedTheme === "light"
+        savedTheme ===
+          "dark" ||
+        savedTheme ===
+          "light"
           ? savedTheme
           : prefersDark
           ? "dark"
@@ -1293,7 +1268,6 @@ function galleryView({
       --blue-soft: #eff6ff;
 
       --danger: #dc2626;
-      --danger-hover: #b91c1c;
       --danger-soft: #fef2f2;
 
       --warning: #b45309;
@@ -1402,7 +1376,6 @@ function galleryView({
         );
 
       --danger: #fb7185;
-      --danger-hover: #f43f5e;
 
       --danger-soft:
         rgba(
@@ -1585,10 +1558,6 @@ function galleryView({
         28px;
     }
 
-    /*
-     * Warna logo dipisahkan dari
-     * warna putih sidebar.
-     */
     .brand-mark {
       width:
         42px;
@@ -1794,37 +1763,40 @@ function galleryView({
         );
     }
 
-    .sidebar-footer span,
-    .sidebar-footer strong {
+    .sidebar-footer strong,
+    .sidebar-footer span {
       display:
         block;
     }
 
-    .sidebar-footer span {
+    .sidebar-footer strong {
       margin-bottom:
-        6px;
+        5px;
+
+      font-size:
+        12px;
+    }
+
+    .sidebar-footer span {
+      overflow:
+        hidden;
 
       color:
         rgba(
           255,
           255,
           255,
-          0.56
+          0.58
         );
 
       font-size:
-        12px;
-    }
+        11px;
 
-    .sidebar-footer strong {
-      font-size:
-        13px;
+      text-overflow:
+        ellipsis;
 
-      line-height:
-        1.4;
-
-      word-break:
-        break-word;
+      white-space:
+        nowrap;
     }
 
     /*
@@ -1838,7 +1810,18 @@ function galleryView({
         0;
 
       padding:
-        26px;
+        28px;
+    }
+
+    .main-inner {
+      width:
+        min(
+          1480px,
+          100%
+        );
+
+      margin:
+        0 auto;
     }
 
     .topbar {
@@ -1846,19 +1829,39 @@ function galleryView({
         flex;
 
       align-items:
-        center;
+        flex-start;
 
       justify-content:
         space-between;
 
       gap:
-        18px;
+        20px;
 
       margin-bottom:
         22px;
     }
 
-    .page-title h1 {
+    .eyebrow {
+      margin:
+        0 0 7px;
+
+      color:
+        var(--accent);
+
+      font-size:
+        12px;
+
+      font-weight:
+        800;
+
+      letter-spacing:
+        0.12em;
+
+      text-transform:
+        uppercase;
+    }
+
+    h1 {
       margin:
         0;
 
@@ -1866,15 +1869,26 @@ function galleryView({
         var(--text-strong);
 
       font-size:
-        28px;
+        clamp(
+          27px,
+          3vw,
+          40px
+        );
+
+      line-height:
+        1.08;
 
       letter-spacing:
-        -0.045em;
+        -0.04em;
     }
 
-    .page-title p {
+    .topbar-copy
+    p:last-child {
+      max-width:
+        720px;
+
       margin:
-        6px 0 0;
+        10px 0 0;
 
       color:
         var(--muted);
@@ -1883,30 +1897,52 @@ function galleryView({
         14px;
 
       line-height:
-        1.55;
+        1.7;
     }
 
     .top-actions {
       display:
         flex;
 
-      justify-content:
-        flex-end;
-
       flex-wrap:
         wrap;
 
+      justify-content:
+        flex-end;
+
       gap:
-        10px;
+        9px;
     }
 
-    .top-actions form {
-      margin:
-        0;
-    }
+    /*
+    |--------------------------------------------------------------------------
+    | Buttons
+    |--------------------------------------------------------------------------
+    */
 
     .btn,
-    .theme-toggle {
+    .theme-toggle,
+    .page-nav,
+    .save-one-btn,
+    .bulk-btn {
+      border:
+        0;
+
+      cursor:
+        pointer;
+
+      text-decoration:
+        none;
+
+      transition:
+        transform 0.18s ease,
+        background 0.18s ease,
+        border-color 0.18s ease,
+        color 0.18s ease,
+        opacity 0.18s ease;
+    }
+
+    .btn {
       min-height:
         42px;
 
@@ -1927,56 +1963,36 @@ function galleryView({
 
       border:
         1px solid
-        var(--line-strong);
+        var(--line);
 
       border-radius:
         13px;
 
-      background:
-        var(--surface);
-
       color:
         var(--text);
+
+      background:
+        var(--surface);
 
       box-shadow:
         var(--shadow-sm);
 
-      text-decoration:
-        none;
-
       font-size:
-        14px;
+        13px;
 
       font-weight:
         750;
-
-      cursor:
-        pointer;
-
-      transition:
-        transform 0.18s ease,
-        border-color 0.18s ease,
-        background 0.18s ease;
     }
 
     .btn:hover,
-    .theme-toggle:hover {
+    .theme-toggle:hover,
+    .page-nav:hover:not(
+      .disabled
+    ) {
       transform:
         translateY(
           -1px
         );
-    }
-
-    .btn:disabled,
-    .theme-toggle:disabled {
-      opacity:
-        0.6;
-
-      cursor:
-        wait;
-
-      transform:
-        none;
     }
 
     .btn-primary {
@@ -1990,66 +2006,98 @@ function galleryView({
         var(--primary);
     }
 
-    .btn-danger {
-      color:
-        #ffffff;
-
+    .btn-primary:hover {
       background:
-        var(--danger);
-
-      border-color:
-        var(--danger);
+        var(--primary-hover);
     }
-
-    .btn-danger:hover {
-      color:
-        #ffffff;
-
-      background:
-        var(--danger-hover);
-
-      border-color:
-        var(--danger-hover);
-    }
-
-    /*
-    |--------------------------------------------------------------------------
-    | Theme
-    |--------------------------------------------------------------------------
-    */
 
     .theme-toggle {
       width:
         42px;
 
-      padding:
-        0;
+      height:
+        42px;
+
+      position:
+        relative;
+
+      display:
+        grid;
+
+      place-items:
+        center;
+
+      border:
+        1px solid
+        var(--line);
+
+      border-radius:
+        13px;
+
+      color:
+        var(--text);
+
+      background:
+        var(--surface);
+
+      box-shadow:
+        var(--shadow-sm);
     }
 
     .theme-icon {
       width:
-        18px;
+        19px;
 
       height:
-        18px;
+        19px;
 
-      display:
-        none;
+      position:
+        absolute;
 
-      flex:
-        0 0 auto;
+      transition:
+        opacity 0.18s ease,
+        transform 0.18s ease;
     }
 
-    html[data-theme="light"]
+    .theme-icon-light {
+      opacity:
+        0;
+
+      transform:
+        rotate(
+          -22deg
+        )
+        scale(
+          0.75
+        );
+    }
+
+    html[data-theme="dark"]
     .theme-icon-dark {
-      display:
-        block;
+      opacity:
+        0;
+
+      transform:
+        rotate(
+          22deg
+        )
+        scale(
+          0.75
+        );
     }
 
     html[data-theme="dark"]
     .theme-icon-light {
-      display:
-        block;
+      opacity:
+        1;
+
+      transform:
+        rotate(
+          0
+        )
+        scale(
+          1
+        );
     }
 
     /*
@@ -2060,7 +2108,7 @@ function galleryView({
 
     .page-alert {
       margin-bottom:
-        16px;
+        18px;
 
       padding:
         13px 15px;
@@ -2074,123 +2122,55 @@ function galleryView({
       gap:
         10px;
 
+      border:
+        1px solid
+        var(--line);
+
       border-radius:
-        14px;
+        var(--radius-md);
+
+      background:
+        var(--surface);
 
       font-size:
         13px;
 
       font-weight:
-        750;
-
-      line-height:
-        1.5;
+        650;
     }
 
-    .page-alert-icon {
-      width:
-        30px;
+    .page-alert-success {
+      color:
+        var(--accent);
 
-      height:
-        30px;
+      background:
+        var(--accent-soft);
+    }
 
-      display:
-        grid;
+    .page-alert-error {
+      color:
+        var(--danger);
 
-      place-items:
-        center;
-
-      flex:
-        0 0 auto;
-
-      border-radius:
-        9px;
+      background:
+        var(--danger-soft);
     }
 
     .page-alert-icon
     .icon {
       width:
-        17px;
+        18px;
 
       height:
-        17px;
-    }
-
-    .page-alert-success {
-      color:
-        #047857;
-
-      background:
-        #ecfdf5;
-
-      border:
-        1px solid
-        #a7f3d0;
-    }
-
-    .page-alert-error {
-      color:
-        #b91c1c;
-
-      background:
-        #fef2f2;
-
-      border:
-        1px solid
-        #fecaca;
-    }
-
-    html[data-theme="dark"]
-    .page-alert-success {
-      color:
-        #5eead4;
-
-      background:
-        rgba(
-          45,
-          212,
-          191,
-          0.1
-        );
-
-      border-color:
-        rgba(
-          45,
-          212,
-          191,
-          0.22
-        );
-    }
-
-    html[data-theme="dark"]
-    .page-alert-error {
-      color:
-        #fda4af;
-
-      background:
-        rgba(
-          251,
-          113,
-          133,
-          0.1
-        );
-
-      border-color:
-        rgba(
-          251,
-          113,
-          133,
-          0.22
-        );
+        18px;
     }
 
     /*
     |--------------------------------------------------------------------------
-    | Metrics
+    | Summary
     |--------------------------------------------------------------------------
     */
 
-    .metrics {
+    .summary-grid {
       display:
         grid;
 
@@ -2204,15 +2184,15 @@ function galleryView({
         );
 
       gap:
-        16px;
+        13px;
 
       margin-bottom:
-        16px;
+        18px;
     }
 
-    .metric-card {
+    .summary-card {
       padding:
-        18px;
+        17px;
 
       border:
         1px solid
@@ -2228,7 +2208,7 @@ function galleryView({
         var(--shadow-sm);
     }
 
-    .metric-head {
+    .summary-head {
       display:
         flex;
 
@@ -2240,59 +2220,36 @@ function galleryView({
 
       gap:
         10px;
+
+      margin-bottom:
+        13px;
     }
 
-    .metric-label {
+    .summary-head span {
       color:
         var(--muted);
 
       font-size:
-        13px;
+        12px;
 
       font-weight:
-        650;
+        750;
     }
 
-    .metric-percent {
-      padding:
-        4px 7px;
-
-      border-radius:
-        999px;
-
-      color:
-        var(--accent);
-
-      background:
-        var(--accent-soft);
-
-      font-size:
-        11px;
-
-      font-weight:
-        850;
-    }
-
-    .metric-value {
-      margin:
-        13px 0 11px;
-
+    .summary-head strong {
       color:
         var(--text-strong);
 
       font-size:
-        34px;
-
-      line-height:
-        1;
+        21px;
 
       letter-spacing:
-        -0.05em;
+        -0.03em;
     }
 
     .progress-track {
       height:
-        8px;
+        7px;
 
       overflow:
         hidden;
@@ -2304,7 +2261,7 @@ function galleryView({
         var(--surface-muted);
     }
 
-    .progress-value {
+    .progress-bar {
       height:
         100%;
 
@@ -2315,55 +2272,51 @@ function galleryView({
         var(--accent);
     }
 
-    .progress-blue {
-      background:
-        var(--blue);
-    }
-
-    .progress-gray {
-      background:
-        var(--muted-2);
-    }
-
-    .metric-note {
-      min-height:
-        34px;
-
+    .summary-foot {
       margin-top:
-        8px;
+        9px;
+
+      display:
+        flex;
+
+      justify-content:
+        space-between;
 
       color:
         var(--muted-2);
 
       font-size:
-        12px;
+        11px;
 
-      line-height:
-        1.45;
+      font-weight:
+        700;
     }
 
     /*
     |--------------------------------------------------------------------------
-    | Search dan filter
+    | Toolbar
     |--------------------------------------------------------------------------
     */
 
-    .control-panel {
+    .toolbar {
       margin-bottom:
-        16px;
+        18px;
 
       padding:
-        14px;
+        15px;
 
       display:
         grid;
 
       grid-template-columns:
         minmax(
-          220px,
+          240px,
           1fr
         )
         auto;
+
+      align-items:
+        center;
 
       gap:
         14px;
@@ -2382,35 +2335,22 @@ function galleryView({
         var(--shadow-sm);
     }
 
-    .search-box {
-      min-height:
-        43px;
-
-      padding:
-        0 12px;
-
-      display:
-        flex;
-
-      align-items:
-        center;
-
-      gap:
-        9px;
-
-      border:
-        1px solid
-        var(--line);
-
-      border-radius:
-        12px;
-
-      background:
-        var(--surface-soft);
+    .search-wrap {
+      position:
+        relative;
     }
 
-    .search-box
-    .icon {
+    .search-wrap
+    > .icon {
+      position:
+        absolute;
+
+      top:
+        50%;
+
+      left:
+        14px;
+
       width:
         18px;
 
@@ -2418,44 +2358,106 @@ function galleryView({
         18px;
 
       color:
-        var(--muted);
+        var(--muted-2);
+
+      transform:
+        translateY(
+          -50%
+        );
+
+      pointer-events:
+        none;
     }
 
-    .search-box input {
+    .search-input {
       width:
         100%;
 
-      min-width:
-        0;
+      min-height:
+        44px;
+
+      padding:
+        0 86px
+        0 43px;
 
       border:
-        0;
+        1px solid
+        var(--line);
+
+      border-radius:
+        13px;
 
       outline:
-        0;
-
-      background:
-        transparent;
+        none;
 
       color:
         var(--text);
 
+      background:
+        var(--surface-soft);
+    }
+
+    .search-input:focus {
+      border-color:
+        var(--accent);
+
+      box-shadow:
+        0 0 0 3px
+        var(--accent-soft);
+    }
+
+    .clear-search {
+      position:
+        absolute;
+
+      top:
+        50%;
+
+      right:
+        8px;
+
+      min-height:
+        30px;
+
+      padding:
+        0 9px;
+
+      border:
+        0;
+
+      border-radius:
+        9px;
+
+      color:
+        var(--muted);
+
+      background:
+        transparent;
+
+      cursor:
+        pointer;
+
+      transform:
+        translateY(
+          -50%
+        );
+
       font-size:
-        14px;
+        11px;
+
+      font-weight:
+        750;
     }
 
     .filter-list {
       display:
         flex;
 
-      align-items:
-        center;
+      flex-wrap:
+        wrap;
 
       justify-content:
         flex-end;
-
-      flex-wrap:
-        wrap;
 
       gap:
         8px;
@@ -2463,10 +2465,10 @@ function galleryView({
 
     .filter-chip {
       min-height:
-        39px;
+        38px;
 
       padding:
-        0 11px;
+        0 12px;
 
       display:
         inline-flex;
@@ -2475,34 +2477,29 @@ function galleryView({
         center;
 
       gap:
-        7px;
+        8px;
 
       border:
         1px solid
         var(--line);
 
       border-radius:
-        11px;
-
-      background:
-        var(--surface-soft);
-
-      color:
-        var(--text);
+        12px;
 
       text-decoration:
         none;
 
+      color:
+        var(--muted);
+
+      background:
+        var(--surface-soft);
+
       font-size:
-        13px;
+        12px;
 
       font-weight:
         750;
-
-      transition:
-        color 0.18s ease,
-        border-color 0.18s ease,
-        background 0.18s ease;
     }
 
     .filter-chip strong {
@@ -2510,34 +2507,47 @@ function galleryView({
         24px;
 
       padding:
-        3px 6px;
+        3px 7px;
 
       border-radius:
         999px;
 
+      text-align:
+        center;
+
       color:
-        var(--muted);
+        var(--text);
 
       background:
         var(--surface-muted);
 
-      text-align:
-        center;
-
       font-size:
-        11px;
+        10px;
     }
 
-    .filter-chip:hover,
     .filter-chip.active {
       color:
-        var(--accent);
-
-      border-color:
-        var(--accent);
+        var(--primary-text);
 
       background:
-        var(--accent-soft);
+        var(--primary);
+
+      border-color:
+        var(--primary);
+    }
+
+    .filter-chip.active
+    strong {
+      color:
+        var(--primary-text);
+
+      background:
+        rgba(
+          255,
+          255,
+          255,
+          0.16
+        );
     }
 
     /*
@@ -2546,21 +2556,12 @@ function galleryView({
     |--------------------------------------------------------------------------
     */
 
-    .bulk-toolbar {
-      position:
-        sticky;
-
-      top:
-        12px;
-
-      z-index:
-        20;
-
+    .bulk-panel {
       margin-bottom:
-        16px;
+        14px;
 
       padding:
-        13px 14px;
+        12px 14px;
 
       display:
         flex;
@@ -2579,16 +2580,13 @@ function galleryView({
         var(--line);
 
       border-radius:
-        var(--radius-lg);
+        var(--radius-md);
 
       background:
         var(--surface);
-
-      box-shadow:
-        var(--shadow-md);
     }
 
-    .bulk-selection-summary,
+    .bulk-left,
     .bulk-actions {
       display:
         flex;
@@ -2600,10 +2598,9 @@ function galleryView({
         wrap;
 
       gap:
-        10px;
+        9px;
     }
 
-    .select-all-control,
     .selection-control {
       display:
         inline-flex;
@@ -2614,27 +2611,11 @@ function galleryView({
       gap:
         8px;
 
-      cursor:
-        pointer;
-
-      user-select:
-        none;
-    }
-
-    .select-all-control {
-      color:
-        var(--text-strong);
-
-      font-size:
-        13px;
-
-      font-weight:
-        800;
-    }
-
-    .selection-control {
       color:
         var(--muted);
+
+      cursor:
+        pointer;
 
       font-size:
         12px;
@@ -2643,8 +2624,8 @@ function galleryView({
         750;
     }
 
-    .select-all-control input,
-    .selection-control input {
+    .selection-control
+    input {
       position:
         absolute;
 
@@ -2669,17 +2650,17 @@ function galleryView({
         center;
 
       border:
-        1.5px solid
+        1px solid
         var(--line-strong);
 
       border-radius:
         6px;
 
+      color:
+        transparent;
+
       background:
         var(--surface);
-
-      transition:
-        0.16s ease;
     }
 
     .selection-icon {
@@ -2688,54 +2669,19 @@ function galleryView({
 
       height:
         13px;
+    }
 
-      opacity:
-        0;
-
+    .selection-control
+    input:checked
+    + .selection-box {
       color:
         var(--primary-text);
 
-      transform:
-        scale(
-          0.7
-        );
-
-      transition:
-        0.16s ease;
-    }
-
-    .select-all-control
-    input:checked
-    +
-    .selection-box,
-    .selection-control
-    input:checked
-    +
-    .selection-box {
-      border-color:
-        var(--primary);
-
       background:
         var(--primary);
-    }
 
-    .select-all-control
-    input:checked
-    +
-    .selection-box
-    .selection-icon,
-    .selection-control
-    input:checked
-    +
-    .selection-box
-    .selection-icon {
-      opacity:
-        1;
-
-      transform:
-        scale(
-          1
-        );
+      border-color:
+        var(--primary);
     }
 
     .selected-count {
@@ -2746,65 +2692,53 @@ function galleryView({
         12px;
 
       font-weight:
-        750;
+        700;
     }
 
     .bulk-btn {
       min-height:
-        40px;
+        36px;
 
       padding:
-        0 13px;
+        0 11px;
 
       border:
-        0;
+        1px solid
+        var(--line);
 
       border-radius:
         11px;
 
+      color:
+        var(--text);
+
+      background:
+        var(--surface-soft);
+
+      font-size:
+        12px;
+
+      font-weight:
+        750;
+    }
+
+    .bulk-btn:disabled {
+      cursor:
+        not-allowed;
+
+      opacity:
+        0.48;
+    }
+
+    .bulk-btn-primary {
       color:
         var(--primary-text);
 
       background:
         var(--primary);
 
-      font-size:
-        13px;
-
-      font-weight:
-        850;
-
-      cursor:
-        pointer;
-
-      transition:
-        transform 0.18s ease,
-        opacity 0.18s ease;
-    }
-
-    .bulk-btn-blue {
-      color:
-        #ffffff;
-
-      background:
-        var(--blue);
-    }
-
-    .bulk-btn:hover:not(
-      :disabled
-    ) {
-      transform:
-        translateY(
-          -1px
-        );
-    }
-
-    .bulk-btn:disabled {
-      opacity:
-        0.5;
-
-      cursor:
-        not-allowed;
+      border-color:
+        var(--primary);
     }
 
     /*
@@ -3045,60 +2979,40 @@ function galleryView({
         11px;
 
       font-weight:
-        850;
+        800;
 
       box-shadow:
-        0 8px 20px
+        0 6px 18px
         rgba(
           15,
           23,
           42,
-          0.14
-        );
-
-      backdrop-filter:
-        blur(
-          8px
+          0.18
         );
     }
 
     .badge-medical {
       color:
-        #047857;
+        #991b1b;
 
       background:
-        rgba(
-          236,
-          253,
-          245,
-          0.92
-        );
+        #fee2e2;
     }
 
     .badge-nonmedical {
       color:
-        #1d4ed8;
+        #166534;
 
       background:
-        rgba(
-          239,
-          246,
-          255,
-          0.92
-        );
+        #dcfce7;
     }
 
     .badge-unknown {
       color:
-        #475569;
+        #92400e;
 
       background:
-        rgba(
-          248,
-          250,
-          252,
-          0.92
-        );
+        #fef3c7;
     }
 
     .card-body {
@@ -3126,6 +3040,12 @@ function galleryView({
     }
 
     .source-label {
+      display:
+        block;
+
+      margin-bottom:
+        5px;
+
       color:
         var(--accent);
 
@@ -3133,7 +3053,7 @@ function galleryView({
         10px;
 
       font-weight:
-        850;
+        800;
 
       letter-spacing:
         0.08em;
@@ -3142,9 +3062,9 @@ function galleryView({
         uppercase;
     }
 
-    .card-title-wrap h3 {
+    .card-heading h3 {
       margin:
-        5px 0 0;
+        0;
 
       overflow:
         hidden;
@@ -3153,16 +3073,16 @@ function galleryView({
         var(--text-strong);
 
       font-size:
-        14px;
+        13px;
 
       line-height:
-        1.45;
-
-      white-space:
-        nowrap;
+        1.4;
 
       text-overflow:
         ellipsis;
+
+      white-space:
+        nowrap;
     }
 
     .icon-link {
@@ -3193,35 +3113,23 @@ function galleryView({
 
       background:
         var(--surface-soft);
-
-      text-decoration:
-        none;
-
-      transition:
-        color 0.18s ease,
-        border-color 0.18s ease;
     }
 
     .icon-link
     .icon {
       width:
-        16px;
+        17px;
 
       height:
-        16px;
-    }
-
-    .icon-link:hover {
-      color:
-        var(--accent);
-
-      border-color:
-        var(--accent);
+        17px;
     }
 
     .metadata-row {
-      margin-top:
-        12px;
+      margin:
+        12px 0;
+
+      padding:
+        9px 0;
 
       display:
         flex;
@@ -3230,16 +3138,20 @@ function galleryView({
         wrap;
 
       gap:
-        6px;
+        7px;
+
+      border-top:
+        1px solid
+        var(--line);
+
+      border-bottom:
+        1px solid
+        var(--line);
     }
 
     .metadata-row span {
       padding:
-        5px 8px;
-
-      border:
-        1px solid
-        var(--line);
+        4px 7px;
 
       border-radius:
         8px;
@@ -3251,71 +3163,65 @@ function galleryView({
         var(--surface-soft);
 
       font-size:
-        11px;
+        10px;
 
       font-weight:
-        700;
+        750;
     }
 
     /*
     |--------------------------------------------------------------------------
-    | Form label
+    | Single Label
     |--------------------------------------------------------------------------
     */
 
     .single-label-form {
-      margin-top:
-        13px;
-
-      padding:
-        11px;
-
-      border:
-        1px solid
-        var(--line);
-
-      border-radius:
-        13px;
-
-      background:
-        var(--surface-soft);
-    }
-
-    .single-label-copy label,
-    .single-label-copy small {
       display:
-        block;
+        grid;
+
+      gap:
+        9px;
     }
 
-    .single-label-copy label {
+    .single-label-copy {
+      display:
+        flex;
+
+      align-items:
+        flex-end;
+
+      justify-content:
+        space-between;
+
+      gap:
+        10px;
+    }
+
+    .single-label-copy
+    label {
       color:
         var(--text-strong);
 
       font-size:
-        12px;
+        11px;
 
       font-weight:
-        850;
+        800;
     }
 
-    .single-label-copy small {
-      margin-top:
-        3px;
-
+    .single-label-copy
+    small {
       color:
         var(--muted-2);
 
       font-size:
-        10px;
+        9px;
 
-      line-height:
-        1.4;
+      text-align:
+        right;
     }
 
     .single-label-controls {
-      margin-top:
-        9px;
-
       display:
         grid;
 
@@ -3331,57 +3237,45 @@ function galleryView({
     }
 
     .single-label-controls
-    select,
-    .limit-select {
+    select {
+      min-width:
+        0;
+
       min-height:
-        39px;
+        38px;
 
       padding:
         0 10px;
 
       border:
         1px solid
-        var(--line-strong);
+        var(--line);
 
       border-radius:
         10px;
 
       outline:
-        0;
+        none;
 
       color:
         var(--text);
 
       background:
-        var(--surface);
+        var(--surface-soft);
 
       font-size:
-        12px;
+        11px;
 
       font-weight:
-        750;
-    }
-
-    .single-label-controls
-    select:focus,
-    .limit-select:focus {
-      border-color:
-        var(--accent);
-
-      box-shadow:
-        0 0 0 3px
-        var(--accent-soft);
+        700;
     }
 
     .save-one-btn {
       min-height:
-        39px;
+        38px;
 
       padding:
-        0 13px;
-
-      border:
-        0;
+        0 12px;
 
       border-radius:
         10px;
@@ -3393,21 +3287,18 @@ function galleryView({
         var(--primary);
 
       font-size:
-        12px;
+        11px;
 
       font-weight:
-        850;
-
-      cursor:
-        pointer;
+        800;
     }
 
     .save-one-btn:disabled {
-      opacity:
-        0.6;
-
       cursor:
         wait;
+
+      opacity:
+        0.65;
     }
 
     /*
@@ -3420,13 +3311,22 @@ function galleryView({
       grid-column:
         1 / -1;
 
+      min-height:
+        330px;
+
       padding:
-        56px 20px;
+        34px;
 
       display:
         grid;
 
       place-items:
+        center;
+
+      align-content:
+        center;
+
+      text-align:
         center;
 
       border:
@@ -3438,20 +3338,14 @@ function galleryView({
 
       background:
         var(--surface);
-
-      text-align:
-        center;
     }
 
     .empty-icon {
       width:
-        56px;
+        58px;
 
       height:
-        56px;
-
-      margin-bottom:
-        14px;
+        58px;
 
       display:
         grid;
@@ -3459,8 +3353,11 @@ function galleryView({
       place-items:
         center;
 
+      margin-bottom:
+        12px;
+
       border-radius:
-        17px;
+        18px;
 
       color:
         var(--accent);
@@ -3471,21 +3368,21 @@ function galleryView({
 
     .empty-state h2 {
       margin:
-        0 0 7px;
+        0;
 
       color:
         var(--text-strong);
 
       font-size:
-        20px;
+        19px;
     }
 
     .empty-state p {
       max-width:
-        480px;
+        420px;
 
       margin:
-        0 0 17px;
+        9px 0 18px;
 
       color:
         var(--muted);
@@ -3508,7 +3405,7 @@ function galleryView({
         18px;
 
       padding:
-        13px 14px;
+        14px;
 
       display:
         flex;
@@ -3544,7 +3441,7 @@ function galleryView({
         center;
 
       gap:
-        9px;
+        8px;
 
       color:
         var(--muted);
@@ -3557,49 +3454,12 @@ function galleryView({
     }
 
     .limit-select {
-      min-width:
-        76px;
-    }
-
-    .pagination-links {
-      display:
-        flex;
-
-      align-items:
-        center;
-
-      justify-content:
-        flex-end;
-
-      flex-wrap:
-        wrap;
-
-      gap:
-        6px;
-    }
-
-    .page-nav,
-    .page-number {
-      min-width:
-        38px;
-
       min-height:
-        38px;
+        36px;
 
       padding:
+        0 30px
         0 10px;
-
-      display:
-        inline-flex;
-
-      align-items:
-        center;
-
-      justify-content:
-        center;
-
-      gap:
-        5px;
 
       border:
         1px solid
@@ -3614,8 +3474,55 @@ function galleryView({
       background:
         var(--surface-soft);
 
-      text-decoration:
-        none;
+      cursor:
+        pointer;
+
+      font-size:
+        12px;
+
+      font-weight:
+        750;
+    }
+
+    .pagination-links {
+      display:
+        flex;
+
+      align-items:
+        center;
+
+      gap:
+        8px;
+    }
+
+    .page-nav {
+      min-height:
+        38px;
+
+      padding:
+        0 13px;
+
+      display:
+        inline-flex;
+
+      align-items:
+        center;
+
+      gap:
+        8px;
+
+      border:
+        1px solid
+        var(--line);
+
+      border-radius:
+        11px;
+
+      color:
+        var(--text);
+
+      background:
+        var(--surface-soft);
 
       font-size:
         12px;
@@ -3624,82 +3531,15 @@ function galleryView({
         800;
     }
 
-    .page-nav
-    .icon {
-      width:
-        16px;
-
-      height:
-        16px;
-    }
-
-    .page-number:hover,
-    .page-number.active,
-    .page-nav:hover {
-      color:
-        var(--accent);
-
-      border-color:
-        var(--accent);
-
-      background:
-        var(--accent-soft);
-    }
-
     .page-nav.disabled {
+      cursor:
+        not-allowed;
+
       opacity:
-        0.38;
+        0.45;
 
       pointer-events:
         none;
-    }
-
-    .page-gap {
-      padding:
-        0 3px;
-
-      color:
-        var(--muted-2);
-    }
-
-    /*
-    |--------------------------------------------------------------------------
-    | Footer
-    |--------------------------------------------------------------------------
-    */
-
-    .footer-note {
-      margin-top:
-        18px;
-
-      display:
-        flex;
-
-      align-items:
-        center;
-
-      justify-content:
-        space-between;
-
-      flex-wrap:
-        wrap;
-
-      gap:
-        14px;
-
-      color:
-        var(--muted-2);
-
-      font-size:
-        12px;
-    }
-
-    .footer-note strong {
-      color:
-        var(--muted);
-
-      font-weight:
-        750;
     }
 
     /*
@@ -3708,120 +3548,105 @@ function galleryView({
     |--------------------------------------------------------------------------
     */
 
-    .toast {
+    .toast-container {
       position:
         fixed;
 
       top:
-        20px;
+        18px;
 
       right:
-        20px;
+        18px;
 
       z-index:
-        10000;
+        1200;
 
       width:
         min(
-          420px,
+          380px,
           calc(
-            100vw - 32px
+            100vw - 36px
           )
         );
 
+      display:
+        grid;
+
+      gap:
+        10px;
+    }
+
+    .toast {
       padding:
-        14px 15px;
+        14px;
+
+      border:
+        1px solid
+        var(--line);
 
       border-radius:
         14px;
 
       color:
-        #ffffff;
+        var(--text);
 
       background:
-        #1d4ed8;
+        var(--surface);
 
       box-shadow:
-        0 20px 50px
-        rgba(
-          15,
-          23,
-          42,
-          0.25
-        );
+        var(--shadow-md);
 
-      opacity:
-        0;
-
-      pointer-events:
-        none;
-
-      transform:
-        translateY(
-          -12px
-        );
-
-      transition:
-        opacity 0.2s ease,
-        transform 0.2s ease;
+      animation:
+        toast-in 0.2s
+        ease;
     }
 
-    .toast.show {
-      opacity:
-        1;
-
-      transform:
-        translateY(
-          0
-        );
-    }
-
-    .toast.success {
-      background:
-        #047857;
-    }
-
-    .toast.error {
-      background:
-        #dc2626;
-    }
-
-    .toast.warning {
-      background:
-        #b45309;
-    }
-
-    .toast-title,
-    .toast-message {
+    .toast strong,
+    .toast span {
       display:
         block;
     }
 
-    .toast-title {
+    .toast strong {
       margin-bottom:
-        2px;
+        4px;
+
+      color:
+        var(--text-strong);
 
       font-size:
         13px;
-
-      font-weight:
-        850;
     }
 
-    .toast-message {
+    .toast span {
+      color:
+        var(--muted);
+
       font-size:
         12px;
 
       line-height:
         1.5;
+    }
 
-      opacity:
-        0.92;
+    .toast-success {
+      border-color:
+        var(--accent);
+    }
+
+    .toast-error {
+      border-color:
+        var(--danger);
+    }
+
+    .toast-warning {
+      border-color:
+        var(--warning);
     }
 
     /*
     |--------------------------------------------------------------------------
-    | Processing overlay
+    | Processing
     |--------------------------------------------------------------------------
     */
 
@@ -3833,7 +3658,7 @@ function galleryView({
         0;
 
       z-index:
-        9999;
+        1100;
 
       display:
         none;
@@ -3849,16 +3674,16 @@ function galleryView({
           2,
           6,
           23,
-          0.48
+          0.52
         );
 
       backdrop-filter:
         blur(
-          5px
+          4px
         );
     }
 
-    .processing-overlay.show {
+    .processing-overlay.active {
       display:
         grid;
     }
@@ -3866,36 +3691,36 @@ function galleryView({
     .processing-card {
       width:
         min(
-          420px,
+          390px,
           100%
         );
 
       padding:
-        22px;
+        23px;
 
       border:
         1px solid
         var(--line);
 
       border-radius:
-        18px;
+        20px;
+
+      text-align:
+        center;
 
       background:
         var(--surface);
 
       box-shadow:
         var(--shadow-md);
-
-      text-align:
-        center;
     }
 
     .spinner {
       width:
-        34px;
+        38px;
 
       height:
-        34px;
+        38px;
 
       margin:
         0 auto 13px;
@@ -3922,6 +3747,9 @@ function galleryView({
     }
 
     .processing-card strong {
+      margin-bottom:
+        6px;
+
       color:
         var(--text-strong);
 
@@ -3930,9 +3758,6 @@ function galleryView({
     }
 
     .processing-card span {
-      margin-top:
-        6px;
-
       color:
         var(--muted);
 
@@ -3940,7 +3765,7 @@ function galleryView({
         12px;
 
       line-height:
-        1.5;
+        1.55;
     }
 
     @keyframes spin {
@@ -3948,6 +3773,28 @@ function galleryView({
         transform:
           rotate(
             360deg
+          );
+      }
+    }
+
+    @keyframes toast-in {
+      from {
+        opacity:
+          0;
+
+        transform:
+          translateY(
+            -8px
+          );
+      }
+
+      to {
+        opacity:
+          1;
+
+        transform:
+          translateY(
+            0
           );
       }
     }
@@ -3960,8 +3807,19 @@ function galleryView({
 
     @media (
       max-width:
-        1180px
+      1180px
     ) {
+      .summary-grid {
+        grid-template-columns:
+          repeat(
+            2,
+            minmax(
+              0,
+              1fr
+            )
+          );
+      }
+
       .gallery-grid {
         grid-template-columns:
           repeat(
@@ -3973,63 +3831,7 @@ function galleryView({
           );
       }
 
-      .metrics {
-        grid-template-columns:
-          repeat(
-            2,
-            minmax(
-              0,
-              1fr
-            )
-          );
-      }
-    }
-
-    @media (
-      max-width:
-        1120px
-    ) {
-      .app {
-        grid-template-columns:
-          1fr;
-      }
-
-      .sidebar {
-        position:
-          static;
-
-        height:
-          auto;
-
-        border-right:
-          none;
-      }
-
-      .sidebar-footer {
-        position:
-          static;
-
-        margin-top:
-          18px;
-      }
-
-      .main {
-        padding:
-          20px;
-      }
-
-      .nav {
-        grid-template-columns:
-          repeat(
-            3,
-            minmax(
-              0,
-              1fr
-            )
-          );
-      }
-
-      .control-panel {
+      .toolbar {
         grid-template-columns:
           1fr;
       }
@@ -4042,20 +3844,67 @@ function galleryView({
 
     @media (
       max-width:
-        720px
+      820px
     ) {
+      .app {
+        display:
+          block;
+      }
+
       .sidebar {
+        position:
+          relative;
+
+        height:
+          auto;
+
         padding:
-          18px;
+          16px;
+      }
+
+      .brand {
+        margin-bottom:
+          14px;
+      }
+
+      .nav {
+        display:
+          flex;
+
+        overflow-x:
+          auto;
+
+        padding-bottom:
+          4px;
+      }
+
+      .nav a {
+        flex:
+          0 0 auto;
+      }
+
+      .sidebar-footer {
+        display:
+          none;
       }
 
       .main {
         padding:
-          14px;
+          20px 16px
+          30px;
       }
 
-      .topbar,
-      .bulk-toolbar,
+      .topbar {
+        display:
+          grid;
+      }
+
+      .top-actions {
+        justify-content:
+          flex-start;
+      }
+
+      .bulk-panel,
       .pagination-panel {
         align-items:
           stretch;
@@ -4064,23 +3913,43 @@ function galleryView({
           column;
       }
 
-      .top-actions {
-        justify-content:
-          flex-start;
+      .pagination-links,
+      .page-nav {
+        width:
+          100%;
       }
 
-      .gallery-grid,
-      .metrics {
+      .page-nav {
+        justify-content:
+          center;
+      }
+    }
+
+    @media (
+      max-width:
+      620px
+    ) {
+      .summary-grid,
+      .gallery-grid {
         grid-template-columns:
           1fr;
       }
 
-      .pagination-links {
-        justify-content:
-          flex-start;
+      .top-actions
+      .btn {
+        flex:
+          1 1 140px;
       }
 
-      .nav {
+      .toolbar {
+        padding:
+          12px;
+      }
+
+      .filter-list {
+        display:
+          grid;
+
         grid-template-columns:
           repeat(
             2,
@@ -4090,80 +3959,77 @@ function galleryView({
             )
           );
       }
-    }
 
-    @media (
-      max-width:
-        480px
-    ) {
-      .top-actions
-      .btn,
-      .top-actions
-      form,
-      .top-actions
-      form
-      .btn {
-        width:
-          100%;
+      .filter-chip {
+        justify-content:
+          space-between;
       }
 
-      .single-label-controls {
-        grid-template-columns:
-          1fr;
-      }
-
-      .save-one-btn,
-      .bulk-btn {
-        width:
-          100%;
-      }
-
-      .bulk-selection-summary,
       .bulk-actions {
         width:
           100%;
       }
 
-      .filter-chip {
+      .bulk-btn {
         flex:
-          1 1
-          calc(
-            50% - 8px
-          );
-
-        justify-content:
-          space-between;
+          1 1 140px;
       }
 
-      .page-nav span {
-        display:
-          none;
+      .single-label-copy {
+        align-items:
+          flex-start;
+
+        flex-direction:
+          column;
+      }
+
+      .single-label-copy
+      small {
+        text-align:
+          left;
       }
     }
   </style>
 </head>
 
 <body>
-  <div class="app">
-    <aside class="sidebar">
-      <div class="brand">
-        <div class="brand-mark">
+  <div
+    class="app"
+  >
+    <aside
+      class="sidebar"
+    >
+      <div
+        class="brand"
+      >
+        <div
+          class="brand-mark"
+        >
           ${brandCameraIcon()}
         </div>
 
         <div>
-          <div class="brand-title">
+          <div
+            class="brand-title"
+          >
             Capture Panel
           </div>
 
-          <div class="brand-subtitle">
+          <div
+            class="brand-subtitle"
+          >
             ESP32-CAM Dataset
           </div>
         </div>
       </div>
 
-      <nav class="nav">
-        <a href="/">
+      <nav
+        class="nav"
+        aria-label="Navigasi utama"
+      >
+        <a
+          href="/"
+        >
           ${icon("grid")}
           Dashboard
         </a>
@@ -4177,510 +4043,540 @@ function galleryView({
           Gallery
         </a>
 
-        <a href="/summary">
+        <a
+          href="/summary"
+        >
           ${icon("chart")}
           Summary
         </a>
 
-        <a href="/test-upload">
+        <a
+          href="/test-upload"
+        >
           ${icon("upload")}
           Upload
         </a>
 
-        <a href="/docs">
+        <a
+          href="/docs"
+        >
           ${icon("file")}
           Docs
         </a>
 
-        <a href="/status">
+        <a
+          href="/status"
+        >
           ${icon("settings")}
           Settings
         </a>
       </nav>
 
-      <div class="sidebar-footer">
-        <span>
-          Storage folder
-        </span>
-
+      <div
+        class="sidebar-footer"
+      >
         <strong>
+          Cloudinary Folder
+        </strong>
+
+        <span
+          title="${escapeHtml(
+            CLOUDINARY_FOLDER
+          )}"
+        >
           ${escapeHtml(
             CLOUDINARY_FOLDER
           )}
-        </strong>
+        </span>
       </div>
     </aside>
 
-    <main class="main">
-      <header class="topbar">
-        <div class="page-title">
-          <h1>
-            Galeri Dataset Limbah
-          </h1>
-
-          <p>
-            Menampilkan
-            ${startItem}-${endItem}
-            dari
-            ${totalItems}
-            data pada filter
-
-            <strong>
-              ${escapeHtml(
-                filterName
-              )}
-            </strong>.
-          </p>
-        </div>
-
-        <div class="top-actions">
-          <button
-            class="theme-toggle"
-            id="themeToggle"
-            type="button"
-            aria-label="Aktifkan mode gelap"
-            title="Aktifkan mode gelap"
-            aria-pressed="false"
+    <main
+      class="main"
+    >
+      <div
+        class="main-inner"
+      >
+        <header
+          class="topbar"
+        >
+          <div
+            class="topbar-copy"
           >
-            ${iconMoon()}
-            ${iconSun()}
-          </button>
+            <p
+              class="eyebrow"
+            >
+              Dataset Management
+            </p>
 
-          <form
-            method="POST"
-            action="/sync-cloudinary"
-            class="sync-form"
+            <h1>
+              Galeri Dataset Limbah
+            </h1>
+
+            <p>
+              Menampilkan
+              ${pageUploads.length}
+              dari
+              ${totalItems}
+              data pada filter
+
+              <strong>
+                ${escapeHtml(
+                  filterName
+                )}
+              </strong>.
+            </p>
+          </div>
+
+          <div
+            class="top-actions"
           >
-            <input
-              type="hidden"
-              name="label"
-              value="${escapeHtml(
-                selectedLabel
-              )}"
-            />
-
-            <input
-              type="hidden"
-              name="limit"
-              value="${limit}"
-            />
-
             <button
+              class="theme-toggle"
+              id="themeToggle"
+              type="button"
+              aria-label="Aktifkan mode gelap"
+              title="Aktifkan mode gelap"
+              aria-pressed="false"
+            >
+              ${iconMoon()}
+              ${iconSun()}
+            </button>
+
+            <a
               class="btn"
-              type="submit"
+              href="${reloadUrl}"
             >
               ${icon("refresh")}
-              Sinkronkan
-            </button>
-          </form>
+              Muat ulang
+            </a>
 
-          <form
-            method="POST"
-            action="/clear-local-data"
-            class="clear-local-form"
+            <a
+              class="btn"
+              href="/summary"
+            >
+              ${icon("chart")}
+              Summary
+            </a>
+
+            <a
+              class="btn btn-primary"
+              href="/test-upload"
+            >
+              ${icon("upload")}
+              Upload image
+            </a>
+          </div>
+        </header>
+
+        ${notificationHtml}
+
+        <section
+          class="summary-grid"
+          aria-label="Ringkasan dataset"
+        >
+          <article
+            class="summary-card"
           >
+            <div
+              class="summary-head"
+            >
+              <span>
+                Total dataset
+              </span>
+
+              <strong>
+                ${total}
+              </strong>
+            </div>
+
+            <div
+              class="progress-track"
+            >
+              <div
+                class="progress-bar"
+                style="width: ${totalProgress}%"
+              ></div>
+            </div>
+
+            <div
+              class="summary-foot"
+            >
+              <span>
+                Target
+                ${DATASET_TARGET}
+              </span>
+
+              <span>
+                ${totalProgress}%
+              </span>
+            </div>
+          </article>
+
+          <article
+            class="summary-card"
+          >
+            <div
+              class="summary-head"
+            >
+              <span>
+                Medis
+              </span>
+
+              <strong>
+                ${medis}
+              </strong>
+            </div>
+
+            <div
+              class="progress-track"
+            >
+              <div
+                class="progress-bar"
+                style="width: ${medisProgress}%"
+              ></div>
+            </div>
+
+            <div
+              class="summary-foot"
+            >
+              <span>
+                Target
+                ${CLASS_TARGET}
+              </span>
+
+              <span>
+                ${medisProgress}%
+              </span>
+            </div>
+          </article>
+
+          <article
+            class="summary-card"
+          >
+            <div
+              class="summary-head"
+            >
+              <span>
+                Non-medis
+              </span>
+
+              <strong>
+                ${nonMedis}
+              </strong>
+            </div>
+
+            <div
+              class="progress-track"
+            >
+              <div
+                class="progress-bar"
+                style="width: ${nonMedisProgress}%"
+              ></div>
+            </div>
+
+            <div
+              class="summary-foot"
+            >
+              <span>
+                Target
+                ${CLASS_TARGET}
+              </span>
+
+              <span>
+                ${nonMedisProgress}%
+              </span>
+            </div>
+          </article>
+
+          <article
+            class="summary-card"
+          >
+            <div
+              class="summary-head"
+            >
+              <span>
+                Unknown
+              </span>
+
+              <strong>
+                ${unknown}
+              </strong>
+            </div>
+
+            <div
+              class="progress-track"
+            >
+              <div
+                class="progress-bar"
+                style="width: ${unknownProgress}%"
+              ></div>
+            </div>
+
+            <div
+              class="summary-foot"
+            >
+              <span>
+                Perlu koreksi
+              </span>
+
+              <span>
+                ${unknownProgress}%
+              </span>
+            </div>
+          </article>
+        </section>
+
+        <section
+          class="toolbar"
+        >
+          <div
+            class="search-wrap"
+          >
+            ${icon("search")}
+
             <input
-              type="hidden"
-              name="limit"
-              value="${limit}"
+              class="search-input"
+              id="gallerySearch"
+              type="search"
+              placeholder="Cari public ID atau sumber..."
+              autocomplete="off"
             />
 
             <button
-              class="btn btn-danger"
-              type="submit"
+              class="clear-search"
+              id="clearSearch"
+              type="button"
             >
-              ${icon("trash")}
-              Hapus data lokal
+              Hapus
             </button>
-          </form>
+          </div>
 
-          <a
-            class="btn"
-            href="/summary"
+          <div
+            class="filter-list"
+            aria-label="Filter kelas"
           >
-            ${icon("chart")}
-            Summary
-          </a>
-
-          <a
-            class="btn btn-primary"
-            href="/test-upload"
-          >
-            ${icon("upload")}
-            Upload image
-          </a>
-        </div>
-      </header>
-
-      ${notificationHtml}
-
-      <section class="metrics">
-        <article class="metric-card">
-          <div class="metric-head">
-            <span class="metric-label">
-              Total dataset
-            </span>
-
-            <span class="metric-percent">
-              ${totalProgress}%
-            </span>
+            ${filterLinks}
           </div>
+        </section>
 
-          <div class="metric-value">
-            <strong>${total}</strong>
-          </div>
-
-          <div class="progress-track">
-            <div
-              class="progress-value"
-              style="width:${totalProgress}%"
-            ></div>
-          </div>
-
-          <div class="metric-note">
-            Target
-            ${DATASET_TARGET}
-            gambar.
-          </div>
-        </article>
-
-        <article class="metric-card">
-          <div class="metric-head">
-            <span class="metric-label">
-              Medis
-            </span>
-
-            <span class="metric-percent">
-              ${medisProgress}%
-            </span>
-          </div>
-
-          <div class="metric-value">
-            <strong>${medis}</strong>
-          </div>
-
-          <div class="progress-track">
-            <div
-              class="progress-value"
-              style="width:${medisProgress}%"
-            ></div>
-          </div>
-
-          <div class="metric-note">
-            Target
-            ${CLASS_TARGET}
-            gambar.
-          </div>
-        </article>
-
-        <article class="metric-card">
-          <div class="metric-head">
-            <span class="metric-label">
-              Non-medis
-            </span>
-
-            <span class="metric-percent">
-              ${nonMedisProgress}%
-            </span>
-          </div>
-
-          <div class="metric-value">
-            <strong>${nonMedis}</strong>
-          </div>
-
-          <div class="progress-track">
-            <div
-              class="progress-value progress-blue"
-              style="width:${nonMedisProgress}%"
-            ></div>
-          </div>
-
-          <div class="metric-note">
-            Target
-            ${CLASS_TARGET}
-            gambar.
-          </div>
-        </article>
-
-        <article class="metric-card">
-          <div class="metric-head">
-            <span class="metric-label">
-              Unknown
-            </span>
-
-            <span class="metric-percent">
-              ${unknownProgress}%
-            </span>
-          </div>
-
-          <div class="metric-value">
-            <strong>${unknown}</strong>
-          </div>
-
-          <div class="progress-track">
-            <div
-              class="progress-value progress-gray"
-              style="width:${unknownProgress}%"
-            ></div>
-          </div>
-
-          <div class="metric-note">
-            Data yang belum
-            memiliki label valid.
-          </div>
-        </article>
-      </section>
-
-      <section class="control-panel">
-        <label
-          class="search-box"
-          for="gallerySearch"
+        <section
+          class="bulk-panel"
         >
-          ${icon("search")}
-
-          <input
-            id="gallerySearch"
-            type="search"
-            placeholder="Cari public_id atau sumber pada halaman ini..."
-            autocomplete="off"
-          />
-        </label>
-
-        <div class="filter-list">
-          ${filterLinks}
-        </div>
-      </section>
-
-      <section class="bulk-toolbar">
-        <div
-          class="bulk-selection-summary"
-        >
-          <label
-            class="select-all-control"
+          <div
+            class="bulk-left"
           >
-            <input
-              type="checkbox"
-              id="selectAll"
-            />
+            <label
+              class="selection-control"
+            >
+              <input
+                type="checkbox"
+                id="selectAll"
+              />
+
+              <span
+                class="selection-box"
+              >
+                ${icon(
+                  "check",
+                  "selection-icon"
+                )}
+              </span>
+
+              <span>
+                Pilih semua yang terlihat
+              </span>
+            </label>
 
             <span
-              class="selection-box"
+              class="selected-count"
+              id="selectedCount"
             >
-              ${icon(
-                "check",
-                "selection-icon"
-              )}
+              0 gambar dipilih
             </span>
+          </div>
 
-            <span>
-              Pilih semua yang terlihat
-            </span>
-          </label>
-
-          <span
-            class="selected-count"
-            id="selectedCount"
+          <div
+            class="bulk-actions"
           >
-            0 gambar dipilih
+            <button
+              class="bulk-btn bulk-btn-primary"
+              type="button"
+              data-label="medis"
+              disabled
+            >
+              Tandai Medis
+            </button>
+
+            <button
+              class="bulk-btn"
+              type="button"
+              data-label="non_medis"
+              disabled
+            >
+              Tandai Non-medis
+            </button>
+          </div>
+        </section>
+
+        <div
+          class="gallery-meta"
+        >
+          <span
+            id="visibleResult"
+          >
+            ${pageUploads.length}
+            kartu dimuat
+          </span>
+
+          <span>
+            Total filter:
+            ${totalItems}
+            data
           </span>
         </div>
 
-        <div class="bulk-actions">
-          <button
-            type="button"
-            class="bulk-btn"
-            data-label="medis"
-            disabled
-          >
-            Ubah ke Medis
-          </button>
-
-          <button
-            type="button"
-            class="bulk-btn bulk-btn-blue"
-            data-label="non_medis"
-            disabled
-          >
-            Ubah ke Non-medis
-          </button>
-        </div>
-      </section>
-
-      <div class="gallery-meta">
-        <span id="visibleResult">
-          ${pageUploads.length}
-          kartu pada halaman
-          ${page}
-        </span>
-
-        <span>
-          Halaman
-          ${page}
-          dari
-          ${totalPages}
-        </span>
-      </div>
-
-      <section
-        class="gallery-grid"
-        id="galleryGrid"
-      >
-        ${cards}
-      </section>
-
-      <section class="pagination-panel">
-        <label
-          class="page-limit"
-          for="limitSelect"
+        <section
+          class="gallery-grid"
+          id="galleryGrid"
+          aria-live="polite"
         >
-          Tampilkan
+          ${cards}
+        </section>
 
-          <select
-            class="limit-select"
-            id="limitSelect"
+        <section
+          class="pagination-panel"
+        >
+          <label
+            class="page-limit"
+            for="limitSelect"
           >
-            ${allowedLimits
-              .map(
-                (value) => `
-                  <option
-                    value="${value}"
-                    ${
-                      value ===
-                      limit
-                        ? "selected"
-                        : ""
-                    }
-                  >
-                    ${value}
-                  </option>
-                `
-              )
-              .join("")}
-          </select>
+            Tampilkan
 
-          data per halaman
-        </label>
+            <select
+              class="limit-select"
+              id="limitSelect"
+            >
+              ${allowedLimits
+                .map(
+                  (value) => `
+                    <option
+                      value="${value}"
+                      ${
+                        value ===
+                        limit
+                          ? "selected"
+                          : ""
+                      }
+                    >
+                      ${value}
+                    </option>
+                  `
+                )
+                .join("")}
+            </select>
 
-        <div class="pagination-links">
-          <a
-            class="page-nav ${
-              page <= 1
-                ? "disabled"
-                : ""
-            }"
-            href="${buildGalleryUrl({
-              page:
-                Math.max(
-                  1,
-                  page - 1
-                ),
+            data per permintaan
+          </label>
 
-              limit,
-
-              label:
-                selectedLabel,
-            })}"
+          <div
+            class="pagination-links"
           >
-            ${icon("chevronLeft")}
+            <a
+              class="page-nav ${
+                hasMore
+                  ? ""
+                  : "disabled"
+              }"
+              href="${nextUrl}"
+              ${
+                hasMore
+                  ? ""
+                  : 'aria-disabled="true" tabindex="-1"'
+              }
+            >
+              <span>
+                Berikutnya
+              </span>
 
-            <span>
-              Sebelumnya
-            </span>
-          </a>
-
-          ${numberedLinks}
-
-          <a
-            class="page-nav ${
-              page >=
-              totalPages
-                ? "disabled"
-                : ""
-            }"
-            href="${buildGalleryUrl({
-              page:
-                Math.min(
-                  totalPages,
-                  page + 1
-                ),
-
-              limit,
-
-              label:
-                selectedLabel,
-            })}"
-          >
-            <span>
-              Berikutnya
-            </span>
-
-            ${icon("chevronRight")}
-          </a>
-        </div>
-      </section>
-
-      <footer class="footer-note">
-        <span>
-          Bulk update hanya
-          memproses kartu yang
-          dipilih pada halaman aktif.
-        </span>
-
-        <strong>
-          ©
-          ${new Date().getFullYear()}
-          Reni Kartika Suwandi.
-        </strong>
-      </footer>
+              ${icon(
+                "chevronRight"
+              )}
+            </a>
+          </div>
+        </section>
+      </div>
     </main>
   </div>
 
   <div
-    class="toast"
-    id="toast"
-    role="status"
+    class="toast-container"
+    id="toastContainer"
     aria-live="polite"
-  >
-    <span
-      class="toast-title"
-      id="toastTitle"
-    ></span>
-
-    <span
-      class="toast-message"
-      id="toastMessage"
-    ></span>
-  </div>
+    aria-atomic="true"
+  ></div>
 
   <div
     class="processing-overlay"
     id="processingOverlay"
     aria-hidden="true"
   >
-    <div class="processing-card">
-      <div class="spinner"></div>
+    <div
+      class="processing-card"
+      role="status"
+    >
+      <div
+        class="spinner"
+      ></div>
 
       <strong
         id="processingTitle"
       >
-        Memproses label
+        Memproses data
       </strong>
 
       <span
         id="processingMessage"
       >
-        Data lokal sedang diperbarui.
+        Metadata Cloudinary
+        sedang diperbarui.
       </span>
     </div>
   </div>
 
   <script>
-    const root =
-      document.documentElement;
+    /*
+    |--------------------------------------------------------------------------
+    | Element
+    |--------------------------------------------------------------------------
+    */
+
+    const THEME_KEY =
+      "capture-panel-gallery-theme";
 
     const themeToggle =
       document.getElementById(
         "themeToggle"
+      );
+
+    const searchInput =
+      document.getElementById(
+        "gallerySearch"
+      );
+
+    const clearSearch =
+      document.getElementById(
+        "clearSearch"
+      );
+
+    const galleryGrid =
+      document.getElementById(
+        "galleryGrid"
+      );
+
+    const visibleResult =
+      document.getElementById(
+        "visibleResult"
       );
 
     const selectAll =
@@ -4698,31 +4594,6 @@ function galleryView({
         "limitSelect"
       );
 
-    const searchInput =
-      document.getElementById(
-        "gallerySearch"
-      );
-
-    const visibleResult =
-      document.getElementById(
-        "visibleResult"
-      );
-
-    const toast =
-      document.getElementById(
-        "toast"
-      );
-
-    const toastTitle =
-      document.getElementById(
-        "toastTitle"
-      );
-
-    const toastMessage =
-      document.getElementById(
-        "toastMessage"
-      );
-
     const processingOverlay =
       document.getElementById(
         "processingOverlay"
@@ -4738,11 +4609,416 @@ function galleryView({
         "processingMessage"
       );
 
-    const GALLERY_THEME_STORAGE_KEY =
-      "capture-panel-gallery-theme";
+    /*
+    |--------------------------------------------------------------------------
+    | Theme
+    |--------------------------------------------------------------------------
+    */
 
-    let toastTimer =
-      null;
+    function getCurrentTheme() {
+      return document
+        .documentElement
+        .getAttribute(
+          "data-theme"
+        ) === "dark"
+        ? "dark"
+        : "light";
+    }
+
+    function updateThemeToggle() {
+      const dark =
+        getCurrentTheme() ===
+        "dark";
+
+      themeToggle
+        ?.setAttribute(
+          "aria-pressed",
+          String(dark)
+        );
+
+      themeToggle
+        ?.setAttribute(
+          "aria-label",
+
+          dark
+            ? "Aktifkan mode terang"
+            : "Aktifkan mode gelap"
+        );
+
+      themeToggle
+        ?.setAttribute(
+          "title",
+
+          dark
+            ? "Aktifkan mode terang"
+            : "Aktifkan mode gelap"
+        );
+    }
+
+    themeToggle
+      ?.addEventListener(
+        "click",
+
+        function () {
+          const nextTheme =
+            getCurrentTheme() ===
+            "dark"
+              ? "light"
+              : "dark";
+
+          document
+            .documentElement
+            .setAttribute(
+              "data-theme",
+              nextTheme
+            );
+
+          document
+            .documentElement
+            .style
+            .colorScheme =
+            nextTheme;
+
+          try {
+            localStorage.setItem(
+              THEME_KEY,
+              nextTheme
+            );
+          } catch (error) {
+            /*
+             * Penyimpanan tema
+             * tidak bersifat wajib.
+             */
+          }
+
+          updateThemeToggle();
+        }
+      );
+
+    updateThemeToggle();
+
+    /*
+    |--------------------------------------------------------------------------
+    | Helper Selection
+    |--------------------------------------------------------------------------
+    */
+
+    function getCards() {
+      return Array.from(
+        document
+          .querySelectorAll(
+            ".dataset-card"
+          )
+      );
+    }
+
+    function getVisibleCards() {
+      return getCards()
+        .filter(
+          function (
+            card
+          ) {
+            return !card
+              .classList
+              .contains(
+                "search-hidden"
+              );
+          }
+        );
+    }
+
+    function getSelectedCheckboxes() {
+      return Array.from(
+        document
+          .querySelectorAll(
+            ".select-image:checked"
+          )
+      );
+    }
+
+    function updateSelectionState() {
+      const selected =
+        getSelectedCheckboxes();
+
+      const visibleCheckboxes =
+        getVisibleCards()
+          .map(
+            function (
+              card
+            ) {
+              return card
+                .querySelector(
+                  ".select-image"
+                );
+            }
+          )
+          .filter(Boolean);
+
+      getCards()
+        .forEach(
+          function (
+            card
+          ) {
+            const checkbox =
+              card.querySelector(
+                ".select-image"
+              );
+
+            card
+              .classList
+              .toggle(
+                "selected",
+                Boolean(
+                  checkbox
+                    ?.checked
+                )
+              );
+          }
+        );
+
+      if (selectedCount) {
+        selectedCount
+          .textContent =
+          selected.length +
+          " gambar dipilih";
+      }
+
+      document
+        .querySelectorAll(
+          ".bulk-btn"
+        )
+        .forEach(
+          function (
+            button
+          ) {
+            button.disabled =
+              selected.length ===
+              0;
+          }
+        );
+
+      if (selectAll) {
+        const selectedVisible =
+          visibleCheckboxes
+            .filter(
+              function (
+                checkbox
+              ) {
+                return checkbox
+                  .checked;
+              }
+            )
+            .length;
+
+        selectAll.checked =
+          visibleCheckboxes.length >
+            0 &&
+          selectedVisible ===
+            visibleCheckboxes.length;
+
+        selectAll.indeterminate =
+          selectedVisible > 0 &&
+          selectedVisible <
+            visibleCheckboxes.length;
+      }
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | Search
+    |--------------------------------------------------------------------------
+    */
+
+    function applySearch() {
+      const query =
+        String(
+          searchInput
+            ?.value ||
+            ""
+        )
+          .trim()
+          .toLowerCase();
+
+      let visibleCount =
+        0;
+
+      getCards()
+        .forEach(
+          function (
+            card
+          ) {
+            const haystack =
+              [
+                card.dataset
+                  .publicId ||
+                  "",
+
+                card.dataset
+                  .source ||
+                  "",
+
+                card.dataset
+                  .label ||
+                  "",
+              ].join(" ");
+
+            const visible =
+              !query ||
+              haystack.includes(
+                query
+              );
+
+            card
+              .classList
+              .toggle(
+                "search-hidden",
+                !visible
+              );
+
+            if (visible) {
+              visibleCount +=
+                1;
+            }
+          }
+        );
+
+      if (visibleResult) {
+        visibleResult
+          .textContent =
+          visibleCount +
+          " kartu terlihat" +
+          (
+            query
+              ? " setelah pencarian"
+              : ""
+          );
+      }
+
+      updateSelectionState();
+    }
+
+    searchInput
+      ?.addEventListener(
+        "input",
+        applySearch
+      );
+
+    clearSearch
+      ?.addEventListener(
+        "click",
+
+        function () {
+          if (searchInput) {
+            searchInput.value =
+              "";
+
+            searchInput.focus();
+          }
+
+          applySearch();
+        }
+      );
+
+    /*
+    |--------------------------------------------------------------------------
+    | Checkbox
+    |--------------------------------------------------------------------------
+    */
+
+    selectAll
+      ?.addEventListener(
+        "change",
+
+        function () {
+          getVisibleCards()
+            .forEach(
+              function (
+                card
+              ) {
+                const checkbox =
+                  card
+                    .querySelector(
+                      ".select-image"
+                    );
+
+                if (checkbox) {
+                  checkbox.checked =
+                    selectAll
+                      .checked;
+                }
+              }
+            );
+
+          updateSelectionState();
+        }
+      );
+
+    galleryGrid
+      ?.addEventListener(
+        "change",
+
+        function (
+          event
+        ) {
+          if (
+            event.target
+              .matches(
+                ".select-image"
+              )
+          ) {
+            updateSelectionState();
+          }
+        }
+      );
+
+    /*
+    |--------------------------------------------------------------------------
+    | Limit
+    |--------------------------------------------------------------------------
+    */
+
+    limitSelect
+      ?.addEventListener(
+        "change",
+
+        function () {
+          const query =
+            new URLSearchParams(
+              window
+                .location
+                .search
+            );
+
+          /*
+           * Perubahan jumlah data
+           * kembali ke kumpulan awal.
+           */
+
+          query.delete(
+            "cursor"
+          );
+
+          query.delete(
+            "page"
+          );
+
+          query.set(
+            "limit",
+            limitSelect.value
+          );
+
+          query.set(
+            "label",
+            "${escapeHtml(
+              selectedLabel
+            )}"
+          );
+
+          window.location.href =
+            "/gallery?" +
+            query.toString();
+        }
+      );
 
     /*
     |--------------------------------------------------------------------------
@@ -4753,47 +5029,73 @@ function galleryView({
     function showToast(
       title,
       message,
-      type = "info"
+      type
     ) {
-      if (
-        !toast ||
-        !toastTitle ||
-        !toastMessage
-      ) {
+      const container =
+        document
+          .getElementById(
+            "toastContainer"
+          );
+
+      if (!container) {
         return;
       }
 
-      window.clearTimeout(
-        toastTimer
-      );
+      const toast =
+        document
+          .createElement(
+            "div"
+          );
 
       toast.className =
-        "toast " +
-        type +
-        " show";
+        "toast toast-" +
+        (
+          type ||
+          "success"
+        );
 
-      toastTitle.textContent =
+      const strong =
+        document
+          .createElement(
+            "strong"
+          );
+
+      const span =
+        document
+          .createElement(
+            "span"
+          );
+
+      strong.textContent =
         title;
 
-      toastMessage.textContent =
+      span.textContent =
         message;
 
-      toastTimer =
-        window.setTimeout(
-          function () {
-            toast
-              .classList
-              .remove(
-                "show"
-              );
-          },
-          5000
-        );
+      toast.appendChild(
+        strong
+      );
+
+      toast.appendChild(
+        span
+      );
+
+      container.appendChild(
+        toast
+      );
+
+      window.setTimeout(
+        function () {
+          toast.remove();
+        },
+
+        4200
+      );
     }
 
     /*
     |--------------------------------------------------------------------------
-    | Processing
+    | Processing Overlay
     |--------------------------------------------------------------------------
     */
 
@@ -4817,477 +5119,66 @@ function galleryView({
           message;
       }
 
-      if (
-        processingOverlay
-      ) {
-        processingOverlay
-          .classList
-          .add(
-            "show"
-          );
+      processingOverlay
+        ?.classList
+        .add(
+          "active"
+        );
 
-        processingOverlay
-          .setAttribute(
-            "aria-hidden",
-            "false"
-          );
-      }
+      processingOverlay
+        ?.setAttribute(
+          "aria-hidden",
+          "false"
+        );
     }
 
     function hideProcessing() {
-      if (
-        processingOverlay
-      ) {
-        processingOverlay
-          .classList
-          .remove(
-            "show"
-          );
-
-        processingOverlay
-          .setAttribute(
-            "aria-hidden",
-            "true"
-          );
-      }
-    }
-
-    /*
-    |--------------------------------------------------------------------------
-    | Card helper
-    |--------------------------------------------------------------------------
-    */
-
-    function getCards() {
-      return Array.from(
-        document
-          .querySelectorAll(
-            ".dataset-card"
-          )
-      );
-    }
-
-    function getVisibleCards() {
-      return getCards()
-        .filter(
-          function (
-            card
-          ) {
-            return (
-              !card
-                .classList
-                .contains(
-                  "search-hidden"
-                )
-            );
-          }
-        );
-    }
-
-    function getVisibleCheckboxes() {
-      return getVisibleCards()
-        .map(
-          function (
-            card
-          ) {
-            return card
-              .querySelector(
-                ".select-image"
-              );
-          }
-        )
-        .filter(Boolean);
-    }
-
-    function getSelectedCheckboxes() {
-      return Array.from(
-        document
-          .querySelectorAll(
-            ".select-image:checked"
-          )
-      );
-    }
-
-    /*
-    |--------------------------------------------------------------------------
-    | Selection
-    |--------------------------------------------------------------------------
-    */
-
-    function updateSelectionState() {
-      const visibleCheckboxes =
-        getVisibleCheckboxes();
-
-      const selectedCheckboxes =
-        getSelectedCheckboxes();
-
-      const selectedVisible =
-        visibleCheckboxes
-          .filter(
-            function (
-              checkbox
-            ) {
-              return (
-                checkbox.checked
-              );
-            }
-          );
-
-      getCards()
-        .forEach(
-          function (
-            card
-          ) {
-            const checkbox =
-              card.querySelector(
-                ".select-image"
-              );
-
-            card
-              .classList
-              .toggle(
-                "selected",
-
-                Boolean(
-                  checkbox &&
-                  checkbox.checked
-                )
-              );
-          }
+      processingOverlay
+        ?.classList
+        .remove(
+          "active"
         );
 
-      if (
-        selectedCount
-      ) {
-        selectedCount
-          .textContent =
-          selectedCheckboxes
-            .length +
-          " gambar dipilih";
-      }
-
-      if (
-        selectAll
-      ) {
-        selectAll.checked =
-          visibleCheckboxes
-            .length > 0 &&
-          selectedVisible
-            .length ===
-            visibleCheckboxes
-              .length;
-
-        selectAll.indeterminate =
-          selectedVisible
-            .length > 0 &&
-          selectedVisible
-            .length <
-            visibleCheckboxes
-              .length;
-      }
-
-      document
-        .querySelectorAll(
-          ".bulk-btn"
-        )
-        .forEach(
-          function (
-            button
-          ) {
-            button.disabled =
-              selectedCheckboxes
-                .length === 0;
-          }
+      processingOverlay
+        ?.setAttribute(
+          "aria-hidden",
+          "true"
         );
     }
 
     /*
     |--------------------------------------------------------------------------
-    | Search
+    | Parse JSON
     |--------------------------------------------------------------------------
     */
 
-    function applySearch() {
-      const query =
-        String(
-          searchInput
-            ? searchInput.value
-            : ""
-        )
-          .trim()
-          .toLowerCase();
-
-      let visibleCount =
-        0;
-
-      getCards()
-        .forEach(
-          function (
-            card
-          ) {
-            const publicId =
-              card.dataset
-                .publicId ||
-              "";
-
-            const source =
-              card.dataset
-                .source ||
-              "";
-
-            const matches =
-              !query ||
-              publicId
-                .includes(
-                  query
-                ) ||
-              source
-                .includes(
-                  query
-                );
-
-            card
-              .classList
-              .toggle(
-                "search-hidden",
-                !matches
-              );
-
-            if (
-              matches
-            ) {
-              visibleCount +=
-                1;
-            }
-          }
-        );
-
-      if (
-        visibleResult
-      ) {
-        visibleResult
-          .textContent =
-          visibleCount +
-          " kartu terlihat pada halaman ${page}" +
-          (
-            query
-              ? " setelah pencarian"
-              : ""
-          );
-      }
-
-      updateSelectionState();
-    }
-
-    /*
-    |--------------------------------------------------------------------------
-    | Tema mandiri Gallery
-    |--------------------------------------------------------------------------
-    */
-
-    function updateThemeToggle(
-      theme
+    async function parseJsonResponse(
+      response
     ) {
-      if (
-        !themeToggle
-      ) {
-        return;
-      }
+      const responseText =
+        await response
+          .text();
 
-      const actionLabel =
-        theme === "dark"
-          ? "Aktifkan mode terang"
-          : "Aktifkan mode gelap";
-
-      themeToggle
-        .setAttribute(
-          "aria-label",
-          actionLabel
-        );
-
-      themeToggle
-        .setAttribute(
-          "title",
-          actionLabel
-        );
-
-      themeToggle
-        .setAttribute(
-          "aria-pressed",
-
-          theme === "dark"
-            ? "true"
-            : "false"
-        );
-    }
-
-    function applyGalleryTheme(
-      theme,
-      persist = true
-    ) {
-      const validTheme =
-        theme === "dark"
-          ? "dark"
-          : "light";
-
-      root.setAttribute(
-        "data-theme",
-        validTheme
-      );
-
-      root.style.colorScheme =
-        validTheme;
-
-      updateThemeToggle(
-        validTheme
-      );
-
-      if (
-        !persist
-      ) {
-        return;
+      if (!responseText) {
+        return {};
       }
 
       try {
-        localStorage.setItem(
-          GALLERY_THEME_STORAGE_KEY,
-          validTheme
+        return JSON.parse(
+          responseText
         );
-      } catch (
-        error
-      ) {
-        console.warn(
-          "Tema Gallery tidak dapat disimpan:",
-
-          error.message
+      } catch (error) {
+        throw new Error(
+          "Respons backend bukan JSON. Status HTTP " +
+          response.status +
+          "."
         );
       }
     }
 
-    if (
-      themeToggle
-    ) {
-      updateThemeToggle(
-        root.getAttribute(
-          "data-theme"
-        )
-      );
-
-      themeToggle
-        .addEventListener(
-          "click",
-
-          function () {
-            const currentTheme =
-              root.getAttribute(
-                "data-theme"
-              );
-
-            const nextTheme =
-              currentTheme ===
-              "dark"
-                ? "light"
-                : "dark";
-
-            applyGalleryTheme(
-              nextTheme,
-              true
-            );
-          }
-        );
-    }
-
     /*
     |--------------------------------------------------------------------------
-    | Search dan checkbox
-    |--------------------------------------------------------------------------
-    */
-
-    searchInput
-      ?.addEventListener(
-        "input",
-        applySearch
-      );
-
-    selectAll
-      ?.addEventListener(
-        "change",
-
-        function () {
-          getVisibleCheckboxes()
-            .forEach(
-              function (
-                checkbox
-              ) {
-                checkbox.checked =
-                  selectAll.checked;
-              }
-            );
-
-          updateSelectionState();
-        }
-      );
-
-    document
-      .addEventListener(
-        "change",
-
-        function (
-          event
-        ) {
-          if (
-            event.target
-              .matches(
-                ".select-image"
-              )
-          ) {
-            updateSelectionState();
-          }
-        }
-      );
-
-    /*
-    |--------------------------------------------------------------------------
-    | Limit pagination
-    |--------------------------------------------------------------------------
-    */
-
-    limitSelect
-      ?.addEventListener(
-        "change",
-
-        function () {
-          const query =
-            new URLSearchParams(
-              window
-                .location
-                .search
-            );
-
-          query.set(
-            "page",
-            "1"
-          );
-
-          query.set(
-            "limit",
-            limitSelect.value
-          );
-
-          query.set(
-            "label",
-            "${selectedLabel}"
-          );
-
-          window.location.href =
-            "/gallery?" +
-            query.toString();
-        }
-      );
-
-    /*
-    |--------------------------------------------------------------------------
-    | Single label
+    | Single Label
     |--------------------------------------------------------------------------
     */
 
@@ -5302,57 +5193,184 @@ function galleryView({
           form.addEventListener(
             "submit",
 
-            function () {
+            async function (
+              event
+            ) {
+              event.preventDefault();
+
               const button =
                 form.querySelector(
                   ".save-one-btn"
                 );
 
+              const formData =
+                new FormData(
+                  form
+                );
+
+              const publicId =
+                String(
+                  formData.get(
+                    "public_id"
+                  ) || ""
+                ).trim();
+
+              const label =
+                String(
+                  formData.get(
+                    "label"
+                  ) || ""
+                ).trim();
+
               if (
-                button
+                !publicId ||
+                !label
               ) {
+                showToast(
+                  "Data belum lengkap",
+
+                  "Public ID dan label wajib diisi.",
+
+                  "error"
+                );
+
+                return;
+              }
+
+              if (button) {
                 button.disabled =
                   true;
 
                 button.textContent =
                   "Menyimpan...";
               }
-            }
-          );
-        }
-      );
 
-    /*
-    |--------------------------------------------------------------------------
-    | Sinkronisasi
-    |--------------------------------------------------------------------------
-    */
+              showProcessing(
+                "Memperbarui label",
 
-    document
-      .querySelectorAll(
-        ".sync-form"
-      )
-      .forEach(
-        function (
-          form
-        ) {
-          form.addEventListener(
-            "submit",
+                "Metadata Cloudinary sedang diperbarui."
+              );
 
-            function () {
-              const button =
-                form.querySelector(
-                  "button"
+              const controller =
+                new AbortController();
+
+              const timeoutId =
+                window
+                  .setTimeout(
+                    function () {
+                      controller
+                        .abort();
+                    },
+
+                    30000
+                  );
+
+              try {
+                const response =
+                  await fetch(
+                    "/api/update-label",
+
+                    {
+                      method:
+                        "POST",
+
+                      headers: {
+                        "Content-Type":
+                          "application/json",
+
+                        Accept:
+                          "application/json",
+                      },
+
+                      credentials:
+                        "same-origin",
+
+                      cache:
+                        "no-store",
+
+                      signal:
+                        controller
+                          .signal,
+
+                      body:
+                        JSON.stringify({
+                          public_id:
+                            publicId,
+
+                          label,
+                        }),
+                    }
+                  );
+
+                const result =
+                  await parseJsonResponse(
+                    response
+                  );
+
+                if (
+                  !response.ok ||
+                  result.success !==
+                    true
+                ) {
+                  throw new Error(
+                    result.message ||
+                    "Label gagal diperbarui."
+                  );
+                }
+
+                hideProcessing();
+
+                showToast(
+                  "Label diperbarui",
+
+                  result.message ||
+                  "Label berhasil diperbarui di Cloudinary.",
+
+                  "success"
                 );
 
-              if (
-                button
-              ) {
-                button.disabled =
-                  true;
+                window
+                  .setTimeout(
+                    function () {
+                      window
+                        .location
+                        .reload();
+                    },
 
-                button.textContent =
-                  "Sinkronisasi...";
+                    700
+                  );
+              } catch (
+                error
+              ) {
+                hideProcessing();
+
+                if (button) {
+                  button.disabled =
+                    false;
+
+                  button.textContent =
+                    "Simpan";
+                }
+
+                const message =
+                  error.name ===
+                  "AbortError"
+                    ? "Proses pembaruan melewati batas waktu."
+                    : error.message ||
+                      "Label gagal diperbarui.";
+
+                showToast(
+                  "Pembaruan gagal",
+
+                  message,
+
+                  "error"
+                );
+              } finally {
+                window
+                  .clearTimeout(
+                    timeoutId
+                  );
               }
             }
           );
@@ -5361,59 +5379,7 @@ function galleryView({
 
     /*
     |--------------------------------------------------------------------------
-    | Hapus metadata lokal
-    |--------------------------------------------------------------------------
-    */
-
-    document
-      .querySelectorAll(
-        ".clear-local-form"
-      )
-      .forEach(
-        function (
-          form
-        ) {
-          form.addEventListener(
-            "submit",
-
-            function (
-              event
-            ) {
-              const confirmed =
-                window.confirm(
-                  "Hapus seluruh metadata lokal dari dashboard dan galeri? " +
-                  "Tindakan ini tidak menghapus gambar Cloudinary."
-                );
-
-              if (
-                !confirmed
-              ) {
-                event.preventDefault();
-                return;
-              }
-
-              const button =
-                form.querySelector(
-                  "button"
-                );
-
-              if (
-                button
-              ) {
-                button.disabled =
-                  true;
-
-                button.textContent =
-                  "Menghapus...";
-              }
-            }
-          );
-        }
-      );
-
-    /*
-    |--------------------------------------------------------------------------
-    | Bulk label
+    | Bulk Label
     |--------------------------------------------------------------------------
     */
 
@@ -5429,19 +5395,19 @@ function galleryView({
             "click",
 
             async function () {
-              const selected =
-                getSelectedCheckboxes();
-
               const publicIds =
-                selected.map(
-                  function (
-                    checkbox
-                  ) {
-                    return (
-                      checkbox.value
-                    );
-                  }
-                );
+                getSelectedCheckboxes()
+                  .map(
+                    function (
+                      checkbox
+                    ) {
+                      return checkbox
+                        .value;
+                    }
+                  )
+                  .filter(
+                    Boolean
+                  );
 
               const newLabel =
                 button.dataset
@@ -5461,6 +5427,21 @@ function galleryView({
                   "Belum ada pilihan",
 
                   "Pilih minimal satu gambar terlebih dahulu.",
+
+                  "error"
+                );
+
+                return;
+              }
+
+              if (
+                publicIds.length >
+                100
+              ) {
+                showToast(
+                  "Pilihan terlalu banyak",
+
+                  "Maksimal 100 gambar dalam satu bulk update.",
 
                   "error"
                 );
@@ -5501,21 +5482,22 @@ function galleryView({
                   publicIds.length +
                   " label",
 
-                "Data lokal sedang disimpan."
+                "Metadata Cloudinary sedang diperbarui."
               );
 
               const controller =
                 new AbortController();
 
               const timeoutId =
-                window.setTimeout(
-                  function () {
-                    controller
-                      .abort();
-                  },
+                window
+                  .setTimeout(
+                    function () {
+                      controller
+                        .abort();
+                    },
 
-                  30000
-                );
+                    45000
+                  );
 
               try {
                 const response =
@@ -5541,7 +5523,8 @@ function galleryView({
                         "no-store",
 
                       signal:
-                        controller.signal,
+                        controller
+                          .signal,
 
                       body:
                         JSON.stringify({
@@ -5554,27 +5537,10 @@ function galleryView({
                     }
                   );
 
-                const responseText =
-                  await response.text();
-
-                let result = {};
-
-                try {
-                  result =
-                    responseText
-                      ? JSON.parse(
-                          responseText
-                        )
-                      : {};
-                } catch (
-                  parseError
-                ) {
-                  throw new Error(
-                    "Respons backend bukan JSON. Status HTTP " +
-                    response.status +
-                    "."
+                const result =
+                  await parseJsonResponse(
+                    response
                   );
-                }
 
                 if (
                   !response.ok ||
@@ -5599,14 +5565,16 @@ function galleryView({
                   "success"
                 );
 
-                window.setTimeout(
-                  function () {
-                    window.location
-                      .reload();
-                  },
+                window
+                  .setTimeout(
+                    function () {
+                      window
+                        .location
+                        .reload();
+                    },
 
-                  900
-                );
+                    800
+                  );
               } catch (
                 error
               ) {
@@ -5615,30 +5583,24 @@ function galleryView({
                 const message =
                   error.name ===
                   "AbortError"
-                    ? "Respons backend melewati batas waktu. Data mungkin sudah tersimpan."
-                    : "Respons koneksi terputus. Data mungkin sudah tersimpan di server.";
+                    ? "Proses pembaruan melewati batas waktu."
+                    : error.message ||
+                      "Bulk update label gagal.";
 
                 showToast(
-                  "Status respons tidak diterima",
+                  "Bulk update gagal",
 
-                  message +
-                  " Halaman akan dimuat ulang untuk memeriksa hasil.",
+                  message,
 
-                  "warning"
+                  "error"
                 );
 
-                window.setTimeout(
-                  function () {
-                    window.location
-                      .reload();
-                  },
-
-                  1600
-                );
+                updateSelectionState();
               } finally {
-                window.clearTimeout(
-                  timeoutId
-                );
+                window
+                  .clearTimeout(
+                    timeoutId
+                  );
               }
             }
           );
