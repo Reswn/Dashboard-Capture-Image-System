@@ -24,7 +24,7 @@ Dashboard dan backend akuisisi citra limbah medis berbasis **Node.js**, **Expres
 Cloudinary digunakan sebagai **sumber data utama**. Sistem tidak memakai MongoDB maupun file JSON lokal sebagai basis data. Citra, label, sumber pengambilan, waktu akuisisi, tag, dan contextual metadata dikelola langsung melalui Cloudinary.
 
 <p align="center">
-  <img src="docs/dashboard-architecture.svg" alt="Arsitektur Dashboard Capture Image System" width="100%">
+  <img src="docs/arsitektur dashboard.png" alt="Arsitektur Dashboard Capture Image System" width="100%">
 </p>
 
 ## Fitur Utama
